@@ -24,3 +24,31 @@ beyond the files above.
 
 This file keeps the source list. The earlier "confirmed so far" bullets were
 superseded by the PDF and have been removed.
+
+## Combat Patrol book (received 5 Nov 2026): this is the 2023 edition
+
+The PDF's own metadata says it was made on 22 June 2023, which is 10th edition.
+Nothing in it says 11th edition, and the 11th edition core rules point to a mission
+deck for missions. So treat it as a **provisional stand-in**, not as 11th edition rules.
+
+What it contains (in my own words):
+- Each player uses a fixed Combat Patrol (a set box of units), no points. Two
+  enhancements per patrol, one is the default.
+- 44" x 30" battlefield, five battle rounds, most victory points wins, a tie is a draw.
+- Setup order: pick patrol, pick mission (or roll D6), build the battlefield,
+  decide attacker and defender, declare formations (patrol squads, attached
+  leaders, transports, reserves), alternate deployment starting with the defender,
+  roll off for first turn, pre-battle abilities.
+- Reserves can't arrive in round 1, and any still in reserve after round 3 count
+  as destroyed. This matches the 11th edition reserves rule (20.03).
+- Objectives are secured at the end of the Command phase if you control one and a
+  non-battle-shocked BATTLELINE unit is in range.
+- Six missions: Clash of Patrols, Archeotech Recovery, Forward Outpost, Scorched
+  Earth, Sweeping Raid, Display of Might. Each has a mission rule, scoring in rounds
+  2 to 4 at the end of your Command phase, and a different last-round rule for the
+  second player. Clash of Patrols scores 5VP per controlled objective, up to 15 a turn.
+- A 10VP bonus for a fully painted army, which the sim ignores.
+
+Still unknown for 11th edition: whether these missions, the deployment distances and
+the scoring were changed. The deployment maps are drawings, and I only have a few of
+their distances as text.
