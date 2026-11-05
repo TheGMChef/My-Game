@@ -160,5 +160,6 @@
  "stat.wounds": "W",
  "stat.leadership": "Ld",
  "stat.oc": "OC",
- "roster.picks_title": "Selected"
+ "roster.picks_title": "Selected",
+ "log.deadly_demise": "%s exploded: %d mortal wounds to each unit nearby."
 }

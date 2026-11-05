@@ -21,6 +21,8 @@ var starting_strength: int = 0
 var battle_shocked: bool = false
 ## Core abilities in upper case, e.g. "FIGHTS FIRST", "STEALTH".
 var abilities: Array[String] = []
+var deadly_demise: String = ""  ## mortal wounds on a 6 when destroyed, "" = none
+var last_position: Vector2 = Vector2.ZERO  ## where the most recent model was destroyed
 ## Turn flags, cleared at the end of each player turn by [method reset_turn_flags].
 var advanced: bool = false
 var fell_back: bool = false
@@ -43,6 +45,7 @@ static func from_dict(d: Dictionary, unit_id: String, owner_id: int, origin: Vec
 	u.save = int(d.get("save", 4))
 	u.invuln = int(d.get("invuln", 0))
 	u.fnp = int(d.get("fnp", 0))
+	u.deadly_demise = str(d.get("deadly_demise", ""))
 	u.wounds_per_model = int(d.get("wounds", 1))
 	u.move = float(d.get("move", 6))
 	u.objective_control = int(d.get("oc", 1))

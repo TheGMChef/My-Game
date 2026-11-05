@@ -13,6 +13,8 @@ extends RefCounted
 ## Not yet modelled: per-model weapon choice, close-quarters shooting, and splitting attacks
 ## across several target units. [ONE SHOT] is tracked per unit, not per model.
 
+const LONE_OPERATIVE_RANGE := 12.0  ## not targetable from further away
+
 
 ## What shooting [param target] would involve: one entry per ranged weapon that has a model
 ## in range with the target visible, each {"weapon", "ctx", "models"}.
@@ -22,6 +24,7 @@ static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array,
 	var plan: Array[Dictionary] = []
 	if target.is_destroyed():
 		return plan
+	var longest_shot: float = LONE_OPERATIVE_RANGE if target.abilities.has("LONE OPERATIVE") else INF
 	var terrain: Array = ctx.get("terrain", [])
 	var turn_no: int = int(ctx.get("turn_no", 0))
 	var stationary: bool = attacker.max_model_move <= 3.0 and not attacker.advanced
@@ -44,7 +47,7 @@ static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array,
 			var best: float = INF
 			for n in target.models:
 				best = minf(best, Geo.edge_distance(m["pos"], attacker.base_radius, n["pos"], target.base_radius))
-			if best > w.range_in:
+			if best > minf(w.range_in, longest_shot):
 				continue
 			var key: String = "seen"
 			if not terrain.is_empty() and not Visibility.unit_visible_to_model(m["pos"], attacker.base_radius, target, turn_no, terrain):
@@ -73,6 +76,8 @@ static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array,
 				c["indirect_min"] = 4 if (stationary and spotted) else 6
 			elif not terrain.is_empty() and not c.has("cover"):
 				c["cover"] = Visibility.has_cover(g["pos"], attacker.base_radius, target, terrain)
+			if target.abilities.has("STEALTH"):
+				c["cover"] = true
 			c["models_firing"] = g["n"]
 			c["half_range"] = g["half"] == g["n"]
 			c["heavy_bonus"] = stationary and unengaged

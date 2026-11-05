@@ -6,6 +6,8 @@ extends RefCounted
 ## {"ok": bool, "reason": String, ...}. Every change is also recorded in [member events] as
 ## plain data, so a UI can show it without owning any game state.
 
+const DEADLY_DEMISE_RANGE := 6.0
+
 var scenario: Dictionary
 var units: Array = []
 var flow: TurnFlow
@@ -72,10 +74,29 @@ func living(side: int) -> Array:
 
 
 func remove_destroyed() -> void:
-	for u in units:
-		if u.is_destroyed():
-			_emit("destroyed", u.owner, {"unit": u.id})
+	var fallen: Array = units.filter(func(u: UnitState) -> bool: return u.is_destroyed())
+	for u in fallen:
+		_emit("destroyed", u.owner, {"unit": u.id})
 	units = units.filter(func(u: UnitState) -> bool: return not u.is_destroyed())
+	for u in fallen:
+		_deadly_demise(u)
+
+
+## Deadly Demise X (24): on a 6, every unit within 6" takes X mortal wounds. Rolled once per
+## unit, not per model. A blast can destroy another unit with the ability, which rolls in turn.
+func _deadly_demise(u: UnitState) -> void:
+	if u.deadly_demise == "" or dice.d6() < 6:
+		return
+	var wounds: int = dice.roll(u.deadly_demise)
+	_emit("deadly_demise", u.owner, {"unit": u.id, "wounds": wounds})
+	for other in units:
+		if other.is_destroyed():
+			continue
+		for m in other.models:
+			if Geo.edge_distance(u.last_position, u.base_radius, m["pos"], other.base_radius) <= DEADLY_DEMISE_RANGE:
+				AttackResolver.mortal_wounds(other, wounds, dice)
+				break
+	remove_destroyed()
 
 
 func unit_by_id(unit_id: String) -> UnitState:

@@ -1005,6 +1005,8 @@ func _log_event(e: Dictionary) -> void:
 			line = UIText.t("log.consolidate", [who])
 		"destroyed":
 			line = UIText.t("log.destroyed", [str(_names.get(e["unit"], "?"))])
+		"deadly_demise":
+			line = UIText.t("log.deadly_demise", [who, int(e["wounds"])])
 		"score":
 			line = UIText.t("log.score_one" if int(e["objectives"]) == 1 else "log.score", [side_word, int(e["vp"]), int(e["objectives"])])
 		"turn_end":

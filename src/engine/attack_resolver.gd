@@ -239,5 +239,6 @@ static func _apply_damage(target: UnitState, index: int, amount: int, dice: Dice
 	var m: Dictionary = target.models[index]
 	m["wounds"] = int(m["wounds"]) - lost
 	if int(m["wounds"]) <= 0:
+		target.last_position = m["pos"]
 		target.models.remove_at(index)
 	return lost

@@ -16,6 +16,19 @@ from pathlib import Path
 ENGINE_SUPPORTED = {
     "RAPID FIRE", "MELTA", "BLAST", "TORRENT", "LETHAL HITS", "SUSTAINED HITS", "DEVASTATING WOUNDS",
     "HEAVY", "CLOSE-QUARTERS", "IGNORES COVER", "ANTI", "HAZARDOUS", "EXTRA ATTACKS", "LANCE",
+    "TWIN-LINKED", "ASSAULT", "PSYCHIC", "PRECISION", "ONE SHOT", "INDIRECT FIRE", "CLEAVE",
+}
+# Longest first, so a name is never matched by a shorter name it starts with.
+KNOWN_ABILITIES = sorted(ENGINE_SUPPORTED | {"PISTOL"}, key=len, reverse=True)
+# Core abilities with no engine rule yet, and what happens instead.
+CORE_STAND_INS = {
+    "DEEP STRIKE": "deploys normally",
+    "INFILTRATORS": "deploys normally",
+    "SCOUTS": "no pre-battle move, deploys normally",
+    "LEADER": "fights as its own unit",
+    "FIRING DECK": "no transports, so unused",
+    "HOVER": "no aircraft rules, so unused",
+    "SUPER-HEAVY WALKER": "moves as a normal unit",
 }
 TYPO_FIXES = {"ANTI-VECHILE": "ANTI-VEHICLE", "DEVESTATING WOUNDS": "DEVASTATING WOUNDS", "TWIN -LINKED": "TWIN-LINKED"}
 
@@ -29,7 +42,25 @@ def clean_tag(t: str) -> str:
     t = re.sub(r"[\x00-\x1f*]", "", t).strip().upper()
     for bad, good in TYPO_FIXES.items():
         t = t.replace(bad, good)
+    return restore_spacing(t)
     return t
+
+
+def restore_spacing(t: str) -> str:
+    """Put back spaces the PDF text lost, as in SUSTAINEDHITS1 or ANTI-VEHICLE4+."""
+    head, colon, tail = t.partition(":")
+    anti = re.match(r"(ANTI-.*?)\s*(\d\+)$", head)
+    if anti:
+        head = f"{anti.group(1)} {anti.group(2)}"
+    else:
+        squashed = head.replace(" ", "")
+        for name in KNOWN_ABILITIES:
+            key = name.replace(" ", "")
+            rest = squashed[len(key):]
+            if squashed.startswith(key) and re.fullmatch(r"(\d+|D\d+)?", rest):
+                head = f"{name} {rest}" if rest else name
+                break
+    return f"{head}: {tail.strip()}" if colon else head
 
 
 def split_tags(text: str):
@@ -48,7 +79,7 @@ def weapon_of(w, unit_issues, uname):
     abilities = []
     for t in tags:
         c = clean_tag(t)
-        if c != t.upper().strip():
+        if c.replace(" ", "") != t.upper().replace(" ", ""):
             unit_issues.append(("warn", f"typo or stray character in weapon tag '{t}' on {name}; read as '{c}'"))
         abilities.append(c)
     skill = 0 if w["skill"] == "N/A" else num(w["skill"])
@@ -113,6 +144,33 @@ def composition(rec, issues):
     return bullets, max(lo, 1), max(hi, 1), items
 
 
+def core_abilities(rec, unit, issues):
+    """Turn the datasheet's CORE and FACTION lines into engine data, logging what can't apply."""
+    applied = []
+    for line in rec.get("ability_text", []):
+        if line.startswith("FACTION:"):
+            issues.append(("info", f"faction ability not applied: {line[8:].strip()}"))
+            continue
+        if not line.startswith("CORE:"):
+            continue
+        for part in line[5:].split(","):
+            name = part.strip().upper()
+            fnp = re.match(r"FEEL NO PAIN (\d)\+", name)
+            demise = re.match(r"DEADLY DEMISE (\S+)", name)
+            stand_in = next((v for k, v in CORE_STAND_INS.items() if name.startswith(k)), None)
+            if fnp:
+                unit["fnp"] = int(fnp.group(1))
+            elif demise:
+                unit["deadly_demise"] = demise.group(1)
+            elif name.startswith(("STEALTH", "LONE OPERATIVE", "FIGHTS FIRST")):
+                applied.append(re.match(r"[A-Z]+(?: [A-Z]+)?", name).group())
+            elif stand_in:
+                issues.append(("info", f"core ability {part.strip()} not applied: {stand_in}"))
+            elif name:
+                issues.append(("warn", f"core ability not recognised: {part.strip()}"))
+    unit["abilities"] = applied
+
+
 def map_unit(rec):
     issues = []
     prof = rec["profiles"][0] if rec.get("profiles") else None
@@ -172,6 +230,9 @@ def map_unit(rec):
         "weapons": final, "all_weapons": weapons,
         "ability_text": rec.get("ability_text", []), "source": rec["source_file"],
     }
+    core_abilities(rec, unit, issues)
+    if any(line.startswith("DAMAGED") for line in rec.get("ability_text", [])):
+        issues.append(("info", "damaged profile not applied"))
     if "+" in prof["m"]:
         issues.append(("warn", f"aircraft-style move {prof['m']}"))
     unit["base_mm"] = 0
@@ -191,7 +252,7 @@ def main():
     units, all_issues = [], {}
     sev = Counter()
     for f in sorted(raw.glob("*.json")):
-        rec = json.load(open(f))
+        rec = json.loads(f.read_text(encoding="utf-8"))
         for u in rec.get("unparsed", []):
             all_issues.setdefault(rec["source_file"], []).append(("error", f"parse: {u}"))
         unit, iss = map_unit(rec) if rec.get("profiles") else (None, [("error", "no stat line")])
@@ -202,19 +263,23 @@ def main():
         if iss:
             all_issues.setdefault(rec["source_file"], []).extend(iss)
     out.write_text(json.dumps({"note": "Local conversion of user-supplied datasheets. Not for the repo.",
-                               "armies": [{"name": army, "units": units}]}, indent=1, ensure_ascii=False))
+                               "armies": [{"name": army, "units": units}]}, indent=1, ensure_ascii=False), encoding="utf-8")
     lines = [f"# {army}: conversion report", "", f"{len(units)} units mapped. Issues: {dict(sev)}", ""]
-    unsupported = Counter(m for iss in all_issues.values() for s, m in iss if "not applied" in m)
+    unsupported = Counter(m for iss in all_issues.values() for s, m in iss if "not applied" in m and "[" in m)
     kw = Counter(re.search(r"\[(.*?)\]", m).group(1) for m in unsupported.elements())
+    not_applied = Counter(re.sub(r"(?<=[a-z]) \d.*?(?= not|:)", "", m.split(":")[0] + ": " + m.split(":", 1)[1].strip())
+                          for iss in all_issues.values() for s, m in iss if "ability" in m and "not applied" in m)
     lines += ["## Weapon abilities the engine cannot apply (count of weapons)", ""]
     lines += [f"- {k}: {v}" for k, v in sorted(kw.items(), key=lambda x: -x[1])] + [""]
+    lines += ["## Unit abilities the engine cannot apply (count of units)", ""]
+    lines += [f"- {k}: {v}" for k, v in not_applied.most_common()] + [""]
     lines += ["## Errors and warnings by unit", ""]
     for src, iss in sorted(all_issues.items()):
         bad = [(s, m) for s, m in iss if s in ("error", "warn")]
         if bad:
             lines.append(f"### {src}")
             lines += [f"- {s}: {m}" for s, m in bad]
-    report.write_text("\n".join(lines))
+    report.write_text("\n".join(lines), encoding="utf-8")
     print(f"{army}: {len(units)} units; {dict(sev)}")
 
 

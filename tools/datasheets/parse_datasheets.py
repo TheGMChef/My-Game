@@ -8,11 +8,14 @@ so nothing is silently dropped. Output stays local (data/local/), never in git.
 Usage: parse_datasheets.py <input_dir> <output_dir>
 """
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+# Poppler keeps weapon rows together with -layout. xpdf, which Git for Windows ships, needs -table.
+LAYOUT_FLAG = os.environ.get("PDFTOTEXT_LAYOUT", "-table" if os.name == "nt" else "-layout")
 NUM = r"(?:\d+|D\d+(?:\+\d+)?|\d+D\d+(?:\+\d+)?|N/A|-)"
 STAT_ROW = re.compile(
     r"^\s*(?P<m>\d+\+?\"|-)\s+(?P<t>\d+)\s+(?P<sv>\d\+|-)\s+(?P<w>\d+)\s+(?P<ld>\d\+|-)\s+(?P<oc>\d+)(?:\s{2,}(?P<label>\S.*?))?\s*$")
@@ -20,9 +23,17 @@ WEAPON_STATS = re.compile(
     r"(?P<range>\d+\"|Melee)\s+(?P<a>" + NUM + r")\s+(?P<skill>\d\+|N/A)\s+(?P<s>" + NUM + r"|\d+\+?)\s+(?P<ap>-?\d+)\s+(?P<d>" + NUM + r")\s*$")
 
 
+def pdf_pages(pdf: Path, flag: str) -> list[str]:
+    out = subprocess.run(["pdftotext", flag, "-enc", "UTF-8", str(pdf), "-"], capture_output=True, check=True).stdout
+    return out.decode("utf-8").split("")
+
+
 def text_of(pdf: Path) -> list[str]:
-    out = subprocess.run(["pdftotext", "-layout", str(pdf), "-"], capture_output=True, text=True, check=True).stdout
-    return out.split("\f")
+    """The weapon table page from LAYOUT_FLAG, the rest from -layout, which keeps spaces in names."""
+    pages = pdf_pages(pdf, "-layout")
+    if LAYOUT_FLAG != "-layout":
+        pages[0] = pdf_pages(pdf, LAYOUT_FLAG)[0]
+    return pages
 
 
 def parse_page1(lines: list[str], rec: dict) -> None:
@@ -155,7 +166,7 @@ def main() -> int:
         except Exception as e:  # keep going, report
             rec = {"source_file": pdf.name, "unparsed": [f"EXCEPTION {e!r}"]}
         rec["folder"] = str(pdf.parent.relative_to(src))
-        (dst / (pdf.stem.replace("/", "_") + ".json")).write_text(json.dumps(rec, indent=1, ensure_ascii=False))
+        (dst / (pdf.stem.replace("/", "_") + ".json")).write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
         if rec["unparsed"] or not rec.get("profiles") or not rec.get("weapons"):
             bad += 1
     print(f"{n} parsed, {bad} flagged")
