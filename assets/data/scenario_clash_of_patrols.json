@@ -1,0 +1,36 @@
+{
+  "id": "clash_of_patrols_placeholder",
+  "name": "Clash of Patrols (PLACEHOLDER, 10th edition Combat Patrol, 2023)",
+  "status": "placeholder",
+  "edition_note": "Taken from the 2023 Combat Patrol book (10th edition). Not confirmed for 11th edition. See design/rules/combat-patrol-adaptation.md.",
+  "battlefield": { "width_in": 44, "height_in": 30 },
+  "battle_rounds": 5,
+  "layout_verified": false,
+  "layout_note": "Objective and deployment positions are an approximation of the book diagram, which was not machine-readable. Check against the PDF before relying on them.",
+  "objective_range_in": 3,
+  "objectives": [
+    { "id": "centre", "pos": [22, 15], "no_mans_land": true },
+    { "id": "attacker_home", "pos": [10, 6], "no_mans_land": false },
+    { "id": "attacker_far", "pos": [12, 24], "no_mans_land": true },
+    { "id": "defender_home", "pos": [34, 24], "no_mans_land": false },
+    { "id": "defender_far", "pos": [32, 6], "no_mans_land": true }
+  ],
+  "deployment_zones": {
+    "attacker": { "rect": [0, 0, 12, 30] },
+    "defender": { "rect": [32, 0, 12, 30] }
+  },
+  "scoring": {
+    "per_objective_vp": 5,
+    "max_vp_per_turn": 15,
+    "first_scoring_round": 2,
+    "last_scoring_round": 5,
+    "score_at": "end_of_command_phase",
+    "round_five_second_player_scores": "end_of_turn"
+  },
+  "mission_rule": {
+    "name": "Retrieve Intelligence",
+    "summary": "From round 2, each Command phase the active player may pick one objective they control, once per objective per battle; if their Warlord is on the table they gain 1 CP."
+  },
+  "reserves": { "cannot_arrive_in_round": 1, "destroyed_if_not_arrived_after_round": 3 },
+  "securing": "Objective is secured at end of Command phase by a non-battle-shocked BATTLELINE unit in range (placeholder, 10th edition rule)."
+}

@@ -8,15 +8,28 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
 
 ## Status
 
-- **Engine set up, no game code yet.** `project.godot` exists (Compatibility renderer, so the web export works) and the project config lives in `project.yaml`.
-- **An earlier TypeScript prototype** is kept in `prototypes/ts-battle-sim/` as a reference for the rules and AI. It uses invented placeholder units. See its README to run it.
-- **Not yet verified:** Godot isn't installed in the build sandbox, so `project.godot` has not been opened by the engine. Open the folder in Godot 4.7.2 and check it loads.
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (65 tests passing headless).
+  Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
+  sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), the full hit / wound / save /
+  damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
+- **Not built yet:** phases and turn flow, movement and coherency, charges, fights, terrain and line of sight,
+  stratagems, transports, attached units, reserves, battle-shock, UI, AI.
+- **Rules source:** official 11th edition PDFs, summarised in own words in `design/rules/`. Gaps that the PDFs do not
+  cover (modifier caps, re-rolls, points) are listed there and are not guessed.
+- **Scenario:** `assets/data/scenario_clash_of_patrols.json` is a placeholder from the 2023 (10th edition) Combat Patrol
+  book. `design/rules/combat-patrol-adaptation.md` lists what to change for 11th edition.
+- **An earlier TypeScript prototype** is kept in `prototypes/ts-battle-sim/` for reference.
+
+## Run the tests
+
+Godot 4.7.2 on your PATH, then: `godot --headless --path . --import`, then
+`godot --headless -s -d --remote-debug tcp://127.0.0.1:0 res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://tests --ignoreHeadlessMode`
 
 ## Next steps
 
-1. Install Godot 4.7.2 and open this folder as a project.
-2. Add a Web export preset (the `build` command in `project.yaml` expects one named `Web`).
-3. Design the battle sim (`/brainstorm` or `/quick-design`), then build it with `/dev-story`.
+1. Turn flow and phases, movement legality (coherency, engagement range).
+2. Terrain, cover and visibility in 2D.
+3. A first playable board and a simple AI.
 
 Game data stays out of the repo: no Games Workshop rules text or datasheets. Units are loaded from your own JSON files.
 
