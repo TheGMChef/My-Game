@@ -11,7 +11,7 @@ They stay out of git (`data/local/`, gitignored) because the GitHub repo is publ
 - Standing owner rules (see CLAUDE.md): ask before writing files in collaboration flows, no commits without instruction, verify UI with retained screenshots in `production/qa/evidence/`.
 
 ## State at handoff
-- 231 gdUnit4 tests pass headless, plus 7 pytest tests for the importer (`tests/tools`).
+- 280 gdUnit4 tests pass headless, plus 23 pytest tests for the importer (`tests/tools`).
 - Weapon keywords done: TWIN-LINKED, ASSAULT, PSYCHIC, PRECISION, ONE SHOT, INDIRECT FIRE (unit-level, not per model). A 40-game AI-vs-AI soak on converted armies ran clean (`godot --headless --path . -s tools/soak_armies.gd -- <games> [armyA armyB]`).
 - Playable: roster screen, then the board (HUD, odds panel, AI turn playback, game over), desktop and tablet.
 - Web export works (`build/web`, gitignored). Roster file upload works in Chromium.
