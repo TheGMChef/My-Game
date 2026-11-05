@@ -102,3 +102,24 @@ static func check_move(unit: UnitState, new_positions: Array[Vector2], mode: Str
 
 static func _no(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason}
+
+
+## True if models at [param positions] would be within engagement range of [param other].
+static func positions_engaged_with(positions: Array[Vector2], radius: float, other: UnitState) -> bool:
+	for p in positions:
+		for n in other.models:
+			if Geo.edge_distance(p, radius, n["pos"], other.base_radius) <= ENGAGEMENT_RANGE:
+				return true
+	return false
+
+
+## Move the models and record the turn flags. Call only after [method check_move] said ok.
+static func apply_move(unit: UnitState, new_positions: Array[Vector2], mode: String) -> void:
+	for i in range(new_positions.size()):
+		var d: float = unit.models[i]["pos"].distance_to(new_positions[i])
+		unit.max_model_move = maxf(unit.max_model_move, d)
+		unit.models[i]["pos"] = new_positions[i]
+	if mode == "advance":
+		unit.advanced = true
+	elif mode == "fall_back":
+		unit.fell_back = true

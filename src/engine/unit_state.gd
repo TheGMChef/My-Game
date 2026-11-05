@@ -19,6 +19,13 @@ var keywords: Array[String] = []
 var weapons: Array[Weapon] = []
 var starting_strength: int = 0
 var battle_shocked: bool = false
+## Core abilities in upper case, e.g. "FIGHTS FIRST", "STEALTH".
+var abilities: Array[String] = []
+## Turn flags, cleared at the end of each player turn by [method reset_turn_flags].
+var advanced: bool = false
+var fell_back: bool = false
+var charged: bool = false
+var max_model_move: float = 0.0  ## furthest any model moved this turn, for [HEAVY]
 ## Per model: {"pos": Vector2, "wounds": int, "character": bool}. Destroyed models are removed.
 var models: Array[Dictionary] = []
 
@@ -40,6 +47,8 @@ static func from_dict(d: Dictionary, unit_id: String, owner_id: int, origin: Vec
 	u.base_radius = float(d.get("base_mm", 32)) / 25.4 / 2.0
 	for k in d.get("keywords", []):
 		u.keywords.append(str(k).to_upper())
+	for a in d.get("abilities", []):
+		u.abilities.append(str(a).to_upper())
 	for w in d.get("weapons", []):
 		u.weapons.append(Weapon.from_dict(w))
 	var count: int = int(d.get("models", 1))
@@ -83,3 +92,25 @@ func centre() -> Vector2:
 	for m in models:
 		sum += m["pos"]
 	return sum / maxf(1.0, float(models.size()))
+
+
+## Forget the per-turn movement flags (call at the end of a player turn).
+func reset_turn_flags() -> void:
+	advanced = false
+	fell_back = false
+	charged = false
+	max_model_move = 0.0
+
+
+## A unit is a Fights First unit if it has the ability or made a charge move this turn (11.04).
+func is_fights_first() -> bool:
+	return charged or abilities.has("FIGHTS FIRST")
+
+
+## Smallest gap between the edges of this unit's models and another unit's models.
+func gap_to(other: UnitState) -> float:
+	var best: float = INF
+	for m in models:
+		for n in other.models:
+			best = minf(best, Geo.edge_distance(m["pos"], base_radius, n["pos"], other.base_radius))
+	return best
