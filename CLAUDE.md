@@ -5,17 +5,20 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Technology Stack
 
-- **Engine**: None — custom web-native engine (canvas 2D), not Godot, Unity or Unreal
-- **Language**: TypeScript (erasable syntax only; Node 22.18+ runs `.ts` files directly)
+- **Engine**: Godot 4.7.2
+- **Language**: GDScript
 - **Version Control**: Git with trunk-based development
-- **Build System**: Vite (`npm run dev`, `npm run build`); tests via `node --test`; type-check via `tsc`
-- **Asset Pipeline**: None yet. Game data is JSON in `src/data/`
+- **Build System**: SCons (engine), Godot Export Templates
+- **Asset Pipeline**: Godot Import System + custom resource pipeline
 
-> **Note**: Engine-specialist agents exist only for Godot, Unity, and Unreal, so
-> none apply here. Use the general programmer agents. The code root is `src/`,
-> tests are in `tests/`. Platforms: web first, then tablet, then mobile.
-> Personal use and testing only; not for release or sharing. Do not paste Games
-> Workshop rules text or datasheets into the repo. Users load their own data as JSON.
+> **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
+> dedicated sub-specialists. Use the set matching your engine.
+
+> **Project notes**: 2D top-down tabletop battle sim. Web export first (Compatibility
+> renderer), then tablet, then mobile. Personal use and testing only; not for
+> release or sharing. Do not paste Games Workshop rules text or datasheets into
+> the repo: users load their own data as JSON. `prototypes/ts-battle-sim/` holds
+> the earlier TypeScript prototype, kept for reference only.
 
 ## Project Structure
 
@@ -23,8 +26,13 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Engine Version Reference
 
-No engine reference applies: this project has no game engine. The browser and
-Node APIs are stable and covered by the model's own knowledge.
+<!-- ENGINE-REFERENCE-IMPORT: the line below is engine-specific. /setup-engine
+     rewrites it to @docs/engine-reference/<engine>/VERSION.md for the chosen
+     engine, so a Unity or Unreal project stops loading the Godot reference every
+     session. It defaults to Godot (the template's example engine); skills that
+     need the pinned version read docs/engine-reference/<engine>/VERSION.md on
+     demand regardless of this import. -->
+@docs/engine-reference/godot/VERSION.md
 
 
 ## Technical Preferences

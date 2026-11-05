@@ -26,12 +26,31 @@ framework:
 # edits this file. See `.claude/docs/config-resolution.md` for the full
 # precedence order.
 
-# Custom stack (no Godot/Unity/Unreal). engine.name is deliberately left unset, so
-# skills spawn no engine specialist and warn once instead.
-stack:
-  runtime: web
-  language: typescript
-  bundler: vite
-  code_root: src
-  test_command: npm test
-  platform_order: [web, tablet, mobile]
+engine:
+  name: "Godot"
+  version: "4.7.2"
+  language: "GDScript"
+  rendering: "Compatibility"
+  physics: "Godot Physics 2D"
+
+specialists:
+  code: "godot-gdscript-specialist"
+  shader: "godot-shader-specialist"
+  ui: "godot-specialist"
+  additional: ["godot-gdextension-specialist"]
+
+naming:
+  classes: PascalCase
+  variables: snake_case
+  constants: SCREAMING_SNAKE
+  signals: past_tense
+  files: snake_case
+  scenes: snake_case
+
+commands:
+  # TODO: godot is not on PATH here — set the editor's full path via /settings
+  # TODO: build needs a Web export preset in export_presets.cfg (none exists yet)
+  build: "godot --headless --export-debug 'Web'"
+  test: "godot --headless -s -d --remote-debug tcp://127.0.0.1:0 res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://tests --ignoreHeadlessMode"
+  run: "godot --path . --windowed --resolution 1280x720"
+  smoke: "godot --headless --quit-after 5"
