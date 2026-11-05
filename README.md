@@ -8,11 +8,11 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
 
 ## Status
 
-- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (135 tests passing headless).
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (159 tests passing headless).
   Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
-  sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, unit-level shooting and melee, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
+  sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, terrain (cover, hidden, obscuring, solid), unit-level shooting and melee, a battle orchestrator with a simple AI, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
-- **Not built yet:** terrain and line of sight,
+- **Not built yet:**
   stratagems, transports, attached units, reserves, desperate escape, UI, AI.
 - **Rules source:** official 11th edition PDFs, summarised in own words in `design/rules/`. Gaps that the PDFs do not
   cover (modifier caps, re-rolls, points) are listed there and are not guessed.
@@ -32,7 +32,7 @@ Godot 4.7.2 on your PATH, then: `godot --headless --path . --import`, then
 
 ## Next steps
 
-1. Terrain, cover and line of sight.
+1. A board UI so you can play and watch battles, then stratagems, transports and reserves. See `design/rules/engine-coverage.md`.
 2. Terrain, cover and visibility in 2D.
 3. A first playable board and a simple AI.
 

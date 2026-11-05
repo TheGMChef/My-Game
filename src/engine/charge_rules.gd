@@ -41,7 +41,7 @@ static func possible_targets(unit: UnitState, all_units: Array, max_distance: in
 
 ## Check a proposed charge move against the rules. Returns {ok, reason}.
 static func check_move(unit: UnitState, new_positions: Array[Vector2], targets: Array[UnitState],
-		max_distance: int, all_units: Array, board: Rect2) -> Dictionary:
+		max_distance: int, all_units: Array, board: Rect2, terrain: Array = []) -> Dictionary:
 	if targets.is_empty():
 		return _no("a charge needs at least one target")
 	if new_positions.size() != unit.models.size():
@@ -54,6 +54,9 @@ static func check_move(unit: UnitState, new_positions: Array[Vector2], targets: 
 			return _no("model %d moves further than the charge roll of %d\"" % [i, max_distance])
 		if not _ends_closer(start, new_positions[i], unit.base_radius, targets):
 			return _no("model %d must end its move closer to a charge target" % i)
+	var blocked: String = UnitRules.terrain_problem(unit, new_positions, terrain)
+	if blocked != "":
+		return _no(blocked)
 	if not UnitRules.in_coherency(new_positions, unit.base_radius):
 		return _no("the unit would not be in coherency")
 	for t in targets:

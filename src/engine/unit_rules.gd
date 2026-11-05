@@ -58,7 +58,7 @@ static func battle_shock_roll(unit: UnitState, dice: Dice) -> bool:
 ## Check a proposed move. [param mode] is "normal", "advance" or "fall_back".
 ## Returns {"ok": bool, "reason": String}.
 static func check_move(unit: UnitState, new_positions: Array[Vector2], mode: String,
-		all_units: Array, board: Rect2, advance_roll: int = 0) -> Dictionary:
+		all_units: Array, board: Rect2, advance_roll: int = 0, terrain: Array = []) -> Dictionary:
 	if new_positions.size() != unit.models.size():
 		return _no("one new position is needed for each model")
 	var is_engaged: bool = engaged(unit, all_units)
@@ -83,6 +83,9 @@ static func check_move(unit: UnitState, new_positions: Array[Vector2], mode: Str
 			return _no("model %d would leave the battlefield" % i)
 		if unit.models[i]["pos"].distance_to(new_positions[i]) > allowed + 0.0001:
 			return _no("model %d moves further than %.1f\"" % [i, allowed])
+	var terrain_problem: String = terrain_problem(unit, new_positions, terrain)
+	if terrain_problem != "":
+		return _no(terrain_problem)
 	if not in_coherency(new_positions, unit.base_radius):
 		return _no("the unit would not be in coherency")
 	var moved := UnitState.new()
@@ -98,6 +101,27 @@ static func check_move(unit: UnitState, new_positions: Array[Vector2], mode: Str
 	if engaged(moved, others):
 		return _no("the unit must end its move unengaged")
 	return {"ok": true, "reason": ""}
+
+
+## Terrain rules for a move (13.06, 13.11). INFANTRY, BEASTS, SWARM and MOBILE models can
+## move through dense terrain. Other models cannot cross dense features taller than 2" (climbing
+## is not modelled). No model may end a move inside a dense feature (Solid).
+## Returns a reason string if the move breaks a terrain rule, or an empty string.
+static func terrain_problem(unit: UnitState, new_positions: Array[Vector2], terrain: Array) -> String:
+	var walker: bool = unit.has_keyword("INFANTRY") or unit.has_keyword("BEASTS") \
+			or unit.has_keyword("SWARM") or unit.has_keyword("MOBILE")
+	for i in range(new_positions.size()):
+		var start: Vector2 = unit.models[i]["pos"]
+		for area in terrain:
+			for f in area.features:
+				if f["category"] != "dense":
+					continue
+				var r: Rect2 = f["rect"]
+				if Geo.circle_overlaps_rect(new_positions[i], unit.base_radius, r):
+					return "model %d cannot end its move inside a dense terrain feature" % i
+				if not walker and float(f["height"]) > 2.0 and Geo.segment_hits_rect(start, new_positions[i], r):
+					return "model %d cannot move through a dense terrain feature taller than 2\"" % i
+	return ""
 
 
 static func _no(reason: String) -> Dictionary:

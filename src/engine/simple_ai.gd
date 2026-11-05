@@ -17,7 +17,7 @@ static func shooting(b: Battle, side: int) -> void:
 		var target: UnitState = _nearest_enemy(b, u)
 		if target == null:
 			continue
-		Combat.shoot(u, target, b.units, b.dice)
+		Combat.shoot(u, target, b.units, b.dice, {"terrain": b.terrain, "turn_no": b.turn_no})
 		b.remove_destroyed()
 
 
@@ -33,7 +33,7 @@ static func charging(b: Battle, side: int) -> void:
 		for dist in range(roll, 0, -1):
 			var dest: Array[Vector2] = _translated(u, target.centre(), float(dist))
 			var targets: Array[UnitState] = [target]
-			if ChargeRules.check_move(u, dest, targets, roll, b.units, b.board)["ok"]:
+			if ChargeRules.check_move(u, dest, targets, roll, b.units, b.board, b.terrain)["ok"]:
 				ChargeRules.apply_move(u, dest)
 				break
 
@@ -90,7 +90,7 @@ static func _try_translate(b: Battle, u: UnitState, goal: Vector2, max_dist: flo
 	var dist: float = minf(max_dist, u.centre().distance_to(goal))
 	while dist > 0.25:
 		var dest: Array[Vector2] = _translated(u, goal, dist)
-		if UnitRules.check_move(u, dest, mode, b.units, b.board)["ok"]:
+		if UnitRules.check_move(u, dest, mode, b.units, b.board, 0, b.terrain)["ok"]:
 			UnitRules.apply_move(u, dest, mode)
 			return
 		dist -= 0.5

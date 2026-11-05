@@ -47,3 +47,14 @@ func test_vp_never_exceeds_the_cap_over_five_rounds() -> void:
 	# 4 scoring rounds x 15 VP is the most a player could score under the placeholder rules
 	assert_int(r["vp"][0]).is_less_equal(60)
 	assert_int(r["vp"][1]).is_less_equal(60)
+
+func test_scenario_terrain_is_loaded_and_units_never_end_inside_dense_features() -> void:
+	var b := _battle(9)
+	assert_int(b.terrain.size()).is_equal(5)
+	b.play_all()
+	for u in b.units:
+		for m in u.models:
+			for area in b.terrain:
+				for f in area.features:
+					if f["category"] == "dense":
+						assert_bool(Geo.circle_overlaps_rect(m["pos"], u.base_radius, f["rect"])).is_false()

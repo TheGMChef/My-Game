@@ -25,6 +25,7 @@ var abilities: Array[String] = []
 var advanced: bool = false
 var fell_back: bool = false
 var charged: bool = false
+var last_fired_turn: int = -10  ## player-turn number of the last ranged attack, for hidden (13.09)
 var max_model_move: float = 0.0  ## furthest any model moved this turn, for [HEAVY]
 ## Per model: {"pos": Vector2, "wounds": int, "character": bool}. Destroyed models are removed.
 var models: Array[Dictionary] = []

@@ -12,6 +12,8 @@ var board: Rect2
 var objectives: Array[Vector2] = []
 var objective_range: float = 3.0
 var log: Array[String] = []
+var terrain: Array = []
+var turn_no: int = 0
 
 var _counter: int = 0
 
@@ -24,6 +26,8 @@ func _init(scenario_data: Dictionary, armies: Array, seed_value: int) -> void:
 	objective_range = float(scenario["objective_range_in"])
 	for o in scenario["objectives"]:
 		objectives.append(Vector2(float(o["pos"][0]), float(o["pos"][1])))
+	for t in scenario.get("terrain", []):
+		terrain.append(TerrainArea.from_dict(t))
 	for side in range(2):
 		_deploy(side, armies[side])
 
@@ -73,6 +77,7 @@ func is_over() -> bool:
 
 ## Play every phase of the current player turn with the built-in AI.
 func play_turn() -> void:
+	turn_no += 1
 	var side: int = flow.active_player
 	var rnd: int = flow.round_no
 	# Command

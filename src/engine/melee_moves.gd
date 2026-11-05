@@ -24,13 +24,13 @@ static func can_pile_in(unit: UnitState, all_units: Array) -> bool:
 	return UnitRules.engaged(unit, all_units) or unit.charged
 
 
-static func check_pile_in(unit: UnitState, new_positions: Array[Vector2], all_units: Array, board: Rect2) -> Dictionary:
+static func check_pile_in(unit: UnitState, new_positions: Array[Vector2], all_units: Array, board: Rect2, terrain: Array = []) -> Dictionary:
 	if not can_pile_in(unit, all_units):
 		return _no("the unit is not eligible to pile in")
 	var targets: Array[UnitState] = pile_in_targets(unit, all_units)
 	if targets.is_empty():
 		return _no("no pile-in target")
-	var base: Dictionary = _check_models(unit, new_positions, targets, all_units, board)
+	var base: Dictionary = _check_models(unit, new_positions, targets, all_units, board, terrain)
 	if not base["ok"]:
 		return base
 	if not _engaged_with_any_enemy(unit, new_positions, all_units):
@@ -51,12 +51,12 @@ static func consolidation_mode(unit: UnitState, all_units: Array, objectives: Ar
 
 
 static func check_consolidation(unit: UnitState, new_positions: Array[Vector2], all_units: Array,
-		board: Rect2, objectives: Array[Vector2], objective_range: float) -> Dictionary:
+		board: Rect2, objectives: Array[Vector2], objective_range: float, terrain: Array = []) -> Dictionary:
 	var mode: String = consolidation_mode(unit, all_units, objectives, objective_range)
 	match mode:
 		"ongoing":
 			var targets: Array[UnitState] = _engaged_enemies(unit, all_units)
-			var base: Dictionary = _check_models(unit, new_positions, targets, all_units, board)
+			var base: Dictionary = _check_models(unit, new_positions, targets, all_units, board, terrain)
 			if not base["ok"]:
 				return base
 			return _check_still_engaged(unit, new_positions, all_units)
@@ -65,7 +65,7 @@ static func check_consolidation(unit: UnitState, new_positions: Array[Vector2], 
 			for o in all_units:
 				if o.owner != unit.owner and not o.is_destroyed() and unit.gap_to(o) <= CONSOLIDATE_SEEK_RANGE:
 					near.append(o)
-			var base2: Dictionary = _check_models(unit, new_positions, near, all_units, board)
+			var base2: Dictionary = _check_models(unit, new_positions, near, all_units, board, terrain)
 			if not base2["ok"]:
 				return base2
 			for t in near:
@@ -73,14 +73,20 @@ static func check_consolidation(unit: UnitState, new_positions: Array[Vector2], 
 					return _no("the unit must be engaged with every selected enemy unit")
 			return {"ok": true, "reason": ""}
 		"objective":
+			var blocked: String = UnitRules.terrain_problem(unit, new_positions, terrain)
+			if blocked != "":
+				return _no(blocked)
 			return _check_objective(unit, new_positions, board, _objectives_within(unit, objectives, CONSOLIDATE_SEEK_RANGE)[0], objective_range)
 	return _no("no consolidation move is possible")
 
 
 static func _check_models(unit: UnitState, new_positions: Array[Vector2], targets: Array[UnitState],
-		all_units: Array, board: Rect2) -> Dictionary:
+		all_units: Array, board: Rect2, terrain: Array = []) -> Dictionary:
 	if new_positions.size() != unit.models.size():
 		return _no("one new position is needed for each model")
+	var blocked: String = UnitRules.terrain_problem(unit, new_positions, terrain)
+	if blocked != "":
+		return _no(blocked)
 	for i in range(new_positions.size()):
 		var start: Vector2 = unit.models[i]["pos"]
 		var moved: float = start.distance_to(new_positions[i])
