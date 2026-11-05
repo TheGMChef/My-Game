@@ -8,7 +8,7 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
 
 ## Status
 
-- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (159 tests passing headless).
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (199 tests passing headless).
   Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
   sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, terrain (cover, hidden, obscuring, solid), unit-level shooting and melee, a battle orchestrator with a simple AI, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
@@ -41,3 +41,7 @@ Game data stays out of the repo: no Games Workshop rules text or datasheets. Uni
 ## Built with
 
 The `.claude/` folder, `CLAUDE.md` and `studio-tests/` come from [Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) by Donchitos, used under the MIT licence (`THIRD-PARTY-LICENSE-Claude-Code-Game-Studios.txt`). `UPGRADING.md` explains how to pull in newer versions of the framework.
+
+## Play it
+
+Run the project in Godot 4.7 (main scene `scenes/main.tscn`): you (blue circles) against the scripted AI (orange hexagons). Drag a unit to move it, tap an enemy to target it, and read the right-hand panel for the rule being applied and exact hit/wound odds before you commit. Settings cover text size, colour-blind mode, reduced motion and overlays. Screenshots of each screen are in `production/qa/evidence/board-view/`; `tools/ui_tour.gd` regenerates them.
