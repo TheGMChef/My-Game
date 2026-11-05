@@ -11,6 +11,7 @@ func _init() -> void:
 	if args.size() > 1: tag = args[1]
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	root_node = scene.instantiate()
+	root_node.skip_roster = true
 	root.add_child(root_node)
 	_run.call_deferred()
 

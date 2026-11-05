@@ -52,16 +52,44 @@ var _over_text: Label
 var _zoom_box: VBoxContainer
 var _body: BoxContainer
 var _portrait: bool = false
+var skip_roster: bool = false    ## tests and tools set this to go straight to the placeholder battle
+var _args: Dictionary = {}
+var _armies_in_play: Array = []
+var _roster: RosterScreen
 
 
 func _ready() -> void:
 	theme = UIThemeBuilder.build()
 	settings.load_from_disk()
 	_setup_input_actions()
-	var args: Dictionary = _parse_args()
-	_load_battle(int(args.get("seed", Time.get_ticks_msec() % 100000)))
-	_build_ui()
+	_args = _parse_args()
 	get_window().size_changed.connect(_apply_scale)
+	_apply_scale()
+	if skip_roster or _args.has("quick"):
+		_start_battle(_placeholder_armies())
+	else:
+		_show_roster()
+
+
+func _placeholder_armies() -> Array:
+	return JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/armies_placeholder.json"))["armies"]
+
+
+## Army and unit selection comes first; the battle is built once it is confirmed.
+func _show_roster() -> void:
+	_roster = RosterScreen.new()
+	add_child(_roster)
+	_roster.setup(str(_args.get("armies", "")))
+	_roster.started.connect(func(armies: Array) -> void:
+		_roster.queue_free()
+		_roster = null
+		_start_battle(armies))
+
+
+func _start_battle(armies: Array) -> void:
+	_armies_in_play = armies
+	_load_battle(armies, int(_args.get("seed", Time.get_ticks_msec() % 100000)))
+	_build_ui()
 	_apply_scale()
 	board.battle = battle
 	board.settings = settings
@@ -90,9 +118,8 @@ func _parse_args() -> Dictionary:
 	return out
 
 
-func _load_battle(seed_value: int) -> void:
+func _load_battle(armies: Array, seed_value: int) -> void:
 	var sc: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/scenario_clash_of_patrols.json"))
-	var armies: Array = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/armies_placeholder.json"))["armies"]
 	battle = Battle.new(sc, armies, seed_value)
 	battle.ai_sides = [false, true]
 	_names.clear()
@@ -485,6 +512,8 @@ func _apply_scale() -> void:
 	var logical_height: float = float(win.size.y) / factor
 	_portrait = logical_height > logical_width * 1.1
 	_compact = logical_width < COMPACT_BELOW
+	if _body == null:
+		return    # still on the roster screen
 	_body.vertical = _portrait
 	if _portrait:
 		# Portrait tablet: the board on top, the explanation panel docked below it.
@@ -836,7 +865,7 @@ func _continue_after_human_action() -> void:
 
 func _restart() -> void:
 	_over_panel.visible = false
-	_load_battle(Time.get_ticks_msec() % 100000)
+	_load_battle(_armies_in_play, Time.get_ticks_msec() % 100000)
 	board.battle = battle
 	_clear_selection()
 	_begun_key = ""
