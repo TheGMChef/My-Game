@@ -12,14 +12,18 @@ static func compute(weapon: Weapon, target: UnitState, ctx: Dictionary = {}) -> 
 	var attacks: float = (Dice.average(weapon.attacks) + float(AttackResolver.extra_attacks_each(weapon, target, ctx))) * float(firing)
 
 	# Hit rolls
-	var skill: int = weapon.skill + (1 if bool(ctx.get("cover", false)) and not weapon.has("IGNORES COVER") else 0)
-	var hit_mod: int = int(ctx.get("hit_mod", 0)) + (1 if bool(ctx.get("heavy_bonus", false)) and weapon.has("HEAVY") else 0)
+	var numbers: Dictionary = AttackResolver.hit_numbers(weapon, ctx)
+	var skill: int = numbers["skill"]
+	var hit_mod: int = numbers["hit_mod"]
+	var indirect_min: int = int(ctx.get("indirect_min", 0))
 	var torrent: bool = weapon.has("TORRENT")
 	var p_hit: float = 1.0
 	var p_crit_hit: float = 0.0
 	if not torrent:
 		var ok: int = 0
 		for r in range(2, 7):
+			if r < indirect_min:
+				continue
 			if r == 6 or r + hit_mod >= skill:
 				ok += 1
 		p_hit = float(ok) / 6.0
@@ -38,14 +42,19 @@ static func compute(weapon: Weapon, target: UnitState, ctx: Dictionary = {}) -> 
 	var anti_at: int = int(anti["threshold"]) if not anti.is_empty() else 7
 	var ok_w: int = 0
 	var crit_w: int = 0
-	for r in range(2, 7):
-		var crit: bool = r == 6 or r >= anti_at
-		if crit:
+	for r in range(1, 7):
+		var res: int = AttackResolver.wound_result(r, wound_mod, threshold, anti_at)
+		if res == 2:
 			crit_w += 1
-		if crit or r + wound_mod >= threshold:
+		if res > 0:
 			ok_w += 1
 	var p_wound: float = float(ok_w) / 6.0
 	var p_crit_wound: float = float(crit_w) / 6.0
+	if weapon.has("TWIN-LINKED"):
+		# A failed roll is re-rolled once, so each outcome gets a second chance.
+		var p_fail: float = 1.0 - p_wound
+		p_wound += p_fail * p_wound
+		p_crit_wound += p_fail * p_crit_wound
 	var devastating: bool = weapon.has("DEVASTATING WOUNDS")
 	var wounds: float = wound_rolls * p_wound + attacks * auto_wounds
 	var crit_wounds: float = wound_rolls * p_crit_wound

@@ -285,3 +285,26 @@ func test_pile_in_of_just_under_three_inches_is_legal() -> void:
 	var b := _unit(1, _v([Vector2(11.8, 10)]))
 	var r := MeleeMoves.check_pile_in(a, _v([Vector2(10.8, 10), Vector2(12.9, 11.5)]), [a, b], BOARD)  # ~3.0"
 	assert_bool(r["ok"]).is_true()
+
+
+func test_ai_skips_a_unit_that_cannot_attack_so_the_fight_phase_still_ends() -> void:
+	# A unit with no melee weapon, in contact with an enemy, used to stall the Fight phase forever.
+	var armies: Array = [
+		{"name": "A", "units": [{"name": "Gunner", "models": 1, "toughness": 4, "save": 4, "wounds": 3, "weapons": [
+			{"name": "Rifle", "range": 24, "attacks": "1", "skill": 3, "strength": 4, "ap": 0, "damage": "1"}]}]},
+		{"name": "B", "units": [{"name": "Brute", "models": 1, "toughness": 4, "save": 4, "wounds": 3, "weapons": [
+			{"name": "Claws", "range": 0, "attacks": "2", "skill": 3, "strength": 4, "ap": 0, "damage": "1"}]}]}]
+	var sc: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/scenario_clash_of_patrols.json"))
+	var b := Battle.new(sc, armies, 5)
+	var a: UnitState = b.units[0]
+	var o: UnitState = b.units[1]
+	o.models[0]["pos"] = a.models[0]["pos"] + Vector2(1.0, 0.0)
+	b.begin_turn()
+	for i in range(4):
+		b.next_phase()
+	b.next_phase()  # pile in -> fight
+	var guard: int = 0
+	while b.fight_chooser() >= 0 and guard < 10:
+		guard += 1
+		b.ai_fight_step()
+	assert_int(b.fight_chooser()).is_equal(-1)

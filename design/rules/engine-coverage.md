@@ -23,12 +23,11 @@ Section numbers refer to the official core rules PDF (1 Jun 2026) as summarised 
 - **Save groups:** every model in a unit shares one profile. CHARACTER models are only ordered last.
 - **Visibility:** lines are drawn between 5 sample points per base. Cover uses the nearest attacking model.
 - **Dense terrain height:** only used for movement (2" rule). Climbing and plunging fire are not modelled.
-- **Shooting:** all models with the target visible and in range fire. No per-model weapon choice, and the shooting types (assault, close-quarters, indirect) are not enforced.
+- **Shooting:** all models with the target visible and in range fire. No per-model weapon choice, Assault (advanced units), indirect fire and One Shot are enforced; close-quarters shooting is not. Weapon keywords done: Twin-linked (re-roll wounds, 10th rule, unverified for 11th), Assault, Indirect Fire, One Shot, Precision, Psychic.
 
 ## Not implemented yet
 Stratagems, transports and embarking, attached units and leaders, strategic reserves and ingress,
-aircraft, flying and Super-heavy Walker, desperate escape, overrun fights, Precision, One Shot,
-Deadly Demise, Scouts and Infiltrators, actions, secured objectives, deployment, the Fire Overwatch
+aircraft, flying and Super-heavy Walker, desperate escape, overrun fights, Deadly Demise, Scouts and Infiltrators, actions, secured objectives, deployment, the Fire Overwatch
 and Heroic Intervention stratagems, UI and a smarter AI.
 
 ## Not sourceable from the supplied PDFs (left out on purpose)

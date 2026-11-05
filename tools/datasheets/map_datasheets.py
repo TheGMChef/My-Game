@@ -130,8 +130,9 @@ def map_unit(rec):
         hits = match_weapon(base, weapons)
         if hits:
             for h in hits:
-                if h["name"] not in seen:
-                    seen.add(h["name"])
+                key = (h["name"], h["range"] == 0)   # same name can be a ranged and a melee profile
+                if key not in seen:
+                    seen.add(key)
                     chosen.append({**h, "count": int(q.group(1)) if q else 1})
         else:
             wargear_items.append(it)
@@ -140,13 +141,19 @@ def map_unit(rec):
         issues.append(("warn", "default loadout not matched to the weapon table; every weapon included"))
     groups = defaultdict(list)
     for w in chosen:
-        groups[w["name"].split(" – ")[0].split(" - ")[0]].append(w)
+        groups[(w["name"].split(" – ")[0].split(" - ")[0], w["range"] == 0)].append(w)
     final = []
-    for g, ws in groups.items():
+    for (g, _melee), ws in groups.items():
         final.append(ws[0])
         if len(ws) > 1:
             issues.append(("warn", f"{g}: {len(ws)} profiles to choose from; only '{ws[0]['name']}' kept (engine has no profile choice yet)"))
-    unmatched_weapons = [w["name"] for w in weapons if w not in chosen]
+    for kind, label in (("melee", "melee"), ("ranged", "ranged")):
+        has_kind = any((w["range"] == 0) == (kind == "melee") for w in final)
+        spare = [w for w in weapons if (w["range"] == 0) == (kind == "melee") and w not in final]
+        if not has_kind and spare:
+            final.append(spare[0])
+            issues.append(("warn", f"default loadout had no {label} weapon; added '{spare[0]['name']}'"))
+    unmatched_weapons = [w["name"] for w in weapons if w not in final]
     if unmatched_weapons:
         issues.append(("info", f"optional weapons not in default loadout: {', '.join(unmatched_weapons)}"))
     if wargear_items:

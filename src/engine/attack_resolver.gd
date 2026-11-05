@@ -3,8 +3,9 @@ extends RefCounted
 ## Resolves a batch of attacks with one weapon against one unit using the 11th edition
 ## attack sequence: hit rolls, wound rolls, save rolls, inflict damage (core rules 05).
 ##
-## Not yet modelled: re-rolls, modifier caps, random characteristics (these rules are not
-## in the supplied PDFs), mixed-profile units, visibility per model.
+## Not yet modelled: modifier caps, random characteristics (these rules are not in the
+## supplied PDFs), mixed-profile units, visibility per model. [TWIN-LINKED] is applied as
+## "re-roll a failed wound roll" (the 10th edition rule): the 11th core text does not define it.
 
 ## Context keys (all optional):
 ##   half_range (bool)   target was within half range when targets were selected
@@ -14,6 +15,7 @@ extends RefCounted
 ##   hit_mod (int)       total modifier to the hit roll
 ##   wound_mod (int)     total modifier to the wound roll
 ##   models_firing (int) number of attacking models using this weapon (default 1)
+##   indirect_min (int)  [INDIRECT FIRE] attacks: an unmodified hit roll below this fails (10.07)
 
 
 ## The roll needed to wound (core rules 05.02).
@@ -27,6 +29,26 @@ static func wound_threshold(strength: int, toughness: int) -> int:
 	if strength * 2 <= toughness:
 		return 6
 	return 5
+
+
+## Skill and hit modifier for the weapon after cover, [HEAVY] and [PSYCHIC]. A [PSYCHIC] weapon
+## ignores penalties to BS/WS and to the hit roll (24.29) but keeps bonuses.
+static func hit_numbers(weapon: Weapon, ctx: Dictionary) -> Dictionary:
+	var skill: int = weapon.skill + (1 if bool(ctx.get("cover", false)) and not weapon.has("IGNORES COVER") else 0)
+	var hit_mod: int = int(ctx.get("hit_mod", 0)) + (1 if bool(ctx.get("heavy_bonus", false)) and weapon.has("HEAVY") else 0)
+	if weapon.has("PSYCHIC"):
+		skill = mini(skill, weapon.skill)
+		hit_mod = maxi(hit_mod, 0)
+	return {"skill": skill, "hit_mod": hit_mod}
+
+
+## 0 = the wound roll fails, 1 = wounds, 2 = critical wound (a 6 or the [ANTI] threshold).
+static func wound_result(roll: int, wound_mod: int, threshold: int, anti_at: int) -> int:
+	if roll == 1:
+		return 0
+	if roll == 6 or roll >= anti_at:
+		return 2
+	return 1 if roll + wound_mod >= threshold else 0
 
 
 ## Extra attack dice each attacking model gains from [BLAST], [CLEAVE] and [RAPID FIRE].
@@ -72,8 +94,10 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 		d_bonus = int(melta["value"])
 
 	# 1. Hit rolls
-	var skill: int = weapon.skill + (1 if bool(ctx.get("cover", false)) and not weapon.has("IGNORES COVER") else 0)
-	var hit_mod: int = int(ctx.get("hit_mod", 0)) + (1 if bool(ctx.get("heavy_bonus", false)) and weapon.has("HEAVY") else 0)
+	var numbers: Dictionary = hit_numbers(weapon, ctx)
+	var skill: int = numbers["skill"]
+	var hit_mod: int = numbers["hit_mod"]
+	var indirect_min: int = int(ctx.get("indirect_min", 0))
 	var to_wound: int = 0       # hits that still need a wound roll
 	var auto_wounds: int = 0    # lethal hits: wound without a roll
 	var torrent: bool = weapon.has("TORRENT")
@@ -86,7 +110,7 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 		to_wound = attacks
 		report["hits"] = attacks
 	for r in hit_rolls:
-		if r == 1:
+		if r == 1 or r < indirect_min:
 			continue
 		var is_crit: bool = r == 6
 		if not is_crit and r + hit_mod < skill:
@@ -108,17 +132,19 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 	var anti: Dictionary = weapon.ability("ANTI", target.keywords)
 	var anti_at: int = int(anti["threshold"]) if not anti.is_empty() else 7
 	var devastating: bool = weapon.has("DEVASTATING WOUNDS")
+	var twin_linked: bool = weapon.has("TWIN-LINKED")
+	var precision: bool = weapon.has("PRECISION")
 	var normal_wounds: int = auto_wounds
 	var devastating_crits: int = 0
 	report["wounds"] += auto_wounds
 	for r in dice.roll_many(to_wound):
-		if r == 1:
-			continue
-		var crit: bool = r == 6 or r >= anti_at
-		if not crit and r + wound_mod < threshold:
+		var result: int = wound_result(r, wound_mod, threshold, anti_at)
+		if result == 0 and twin_linked:
+			result = wound_result(dice.d6(), wound_mod, threshold, anti_at)
+		if result == 0:
 			continue
 		report["wounds"] += 1
-		if crit:
+		if result == 2:
 			report["critical_wounds"] += 1
 			if devastating:
 				devastating_crits += 1
@@ -131,7 +157,7 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 	for r in save_rolls:
 		if target.is_destroyed():
 			break
-		var group_index: int = _model_to_hit(target)
+		var group_index: int = _model_to_hit(target, precision)
 		var model: Dictionary = target.models[group_index]
 		var blocked: bool = false
 		if r != 1:
@@ -152,7 +178,7 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 		if target.is_destroyed():
 			break
 		var mw: int = dice.roll(weapon.damage) + d_bonus
-		var victim: Dictionary = target.models[_model_to_hit(target)]
+		var victim: Dictionary = target.models[_model_to_hit(target, precision)]
 		var applied: int = 0
 		for j in range(mw):
 			applied += _apply_damage(target, target.models.find(victim), 1, dice, report)
@@ -184,10 +210,12 @@ static func hazard_roll(target: UnitState, dice: Dice) -> int:
 
 
 ## Pick the model that takes the next hit: a wounded non-CHARACTER, else any
-## non-CHARACTER, else a wounded CHARACTER, else any CHARACTER.
-static func _model_to_hit(target: UnitState) -> int:
+## non-CHARACTER, else a wounded CHARACTER, else any CHARACTER. With [PRECISION] the
+## CHARACTER models come first (24.28; visibility per model is not modelled, so any
+## CHARACTER in a visible unit counts as visible).
+static func _model_to_hit(target: UnitState, precision: bool = false) -> int:
 	for pass_no in range(4):
-		var want_character: bool = pass_no >= 2
+		var want_character: bool = (pass_no >= 2) != precision
 		var want_wounded: bool = pass_no % 2 == 0
 		for i in range(target.models.size()):
 			var m: Dictionary = target.models[i]

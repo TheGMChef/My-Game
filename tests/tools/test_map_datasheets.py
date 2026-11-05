@@ -52,3 +52,20 @@ def test_quantity_kept():
 def test_missing_stat_line_is_an_error():
     unit, issues = m.map_unit(fake(profiles=[]))
     assert unit is None and issues[0][0] == "error"
+
+
+def test_default_loadout_without_melee_gets_one_added_and_flagged():
+    unit, issues = m.map_unit(fake(composition_raw=["■ 1 Test", "This model is equipped with: zap rifle."]))
+    names = [w["name"] for w in unit["weapons"]]
+    assert "Fists" in names
+    assert any(i[0] == "warn" and "no melee" in i[1] for i in issues)
+
+
+def test_same_name_ranged_and_melee_profiles_are_both_kept():
+    rec = fake(composition_raw=["■ 1 Test", "This model is equipped with: zap staff."])
+    rec["weapons"] = [
+        {"name": "Zap staff [BLAST]", "kind": "ranged", "range": '24"', "a": "1", "skill": "3+", "s": "5", "ap": "-1", "d": "2"},
+        {"name": "Zap staff", "kind": "melee", "range": "Melee", "a": "3", "skill": "3+", "s": "5", "ap": "-1", "d": "2"}]
+    unit, issues = m.map_unit(rec)
+    assert sorted(w["range"] for w in unit["weapons"]) == [0, 24]
+    assert not any("no melee" in i[1] for i in issues)

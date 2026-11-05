@@ -39,8 +39,8 @@ They stay out of git (`data/local/`, gitignored) because the GitHub repo is publ
 - 11th edition faction packs (T'au, Necrons, Tyranids, Leagues of Votann) and the core rules text were extracted earlier into a scratchpad `rules/` folder. They were not committed.
 
 ## Open items, in suggested order
-1. Add weapon keywords the engine cannot apply yet. Counts across all armies: TWIN-LINKED 212, ASSAULT 49, PSYCHIC 43, PRECISION 38, ONE SHOT 29, INDIRECT FIRE 26.
-2. Decide TWIN-LINKED for 11th: the core rules text has no definition, the T'au pack still prints it. Default if undecided: re-roll wound rolls, marked unverified.
+1. DONE: weapon keywords TWIN-LINKED (re-roll wounds, unverified for 11th), ASSAULT, PSYCHIC, PRECISION, ONE SHOT, INDIRECT FIRE. `tools/soak_armies.gd` runs AI-vs-AI games on local armies.
+2. Known gaps: per-weapon counts ignored, no profile choice (standard/supercharge), mixed-model units use the first stat line.
 3. Per-weapon counts (for example two carbines on one model), profile choice (standard vs overcharge), mixed-model units (engine uses the first stat line).
 4. Leaders and attached units, transports, wargear options, reserves and Deep Strike, Infiltrators, Scouts, aircraft, Deadly Demise, stratagems, desperate escape, overrun fights.
 5. Verify datasheet values against the 11th edition packs, unit by unit. Base sizes are estimated (`ArmyLoader.guess_base_mm`).

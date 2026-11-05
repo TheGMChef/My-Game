@@ -49,9 +49,12 @@ static func fight_one(b: Battle, side: int) -> void:
 		if u.owner != side:
 			continue
 		var foe: UnitState = _nearest_enemy(b, u)
+		var fought: bool = false
 		if foe != null and u.gap_to(foe) <= UnitRules.ENGAGEMENT_RANGE:
-			b.cmd_fight(u, foe)
-		else:
+			fought = bool(b.cmd_fight(u, foe)["ok"])
+		if not fought:
+			# A unit that cannot attack (for example, it has no melee weapon) must still be
+			# selected or the Fight phase never ends.
 			b.cmd_fight_skip(u)
 		return
 
