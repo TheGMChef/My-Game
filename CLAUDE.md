@@ -5,14 +5,17 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Technology Stack
 
-- **Engine**: [CHOOSE: Godot 4 / Unity / Unreal Engine 5]
-- **Language**: [CHOOSE: GDScript / C# / C++ / Blueprint]
+- **Engine**: None — custom web-native engine (canvas 2D), not Godot, Unity or Unreal
+- **Language**: TypeScript (erasable syntax only; Node 22.18+ runs `.ts` files directly)
 - **Version Control**: Git with trunk-based development
-- **Build System**: [SPECIFY after choosing engine]
-- **Asset Pipeline**: [SPECIFY after choosing engine]
+- **Build System**: Vite (`npm run dev`, `npm run build`); tests via `node --test`; type-check via `tsc`
+- **Asset Pipeline**: None yet. Game data is JSON in `src/data/`
 
-> **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
-> dedicated sub-specialists. Use the set matching your engine.
+> **Note**: Engine-specialist agents exist only for Godot, Unity, and Unreal, so
+> none apply here. Use the general programmer agents. The code root is `src/`,
+> tests are in `tests/`. Platforms: web first, then tablet, then mobile.
+> Personal use and testing only; not for release or sharing. Do not paste Games
+> Workshop rules text or datasheets into the repo. Users load their own data as JSON.
 
 ## Project Structure
 
@@ -20,13 +23,8 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Engine Version Reference
 
-<!-- ENGINE-REFERENCE-IMPORT: the line below is engine-specific. /setup-engine
-     rewrites it to @docs/engine-reference/<engine>/VERSION.md for the chosen
-     engine, so a Unity or Unreal project stops loading the Godot reference every
-     session. It defaults to Godot (the template's example engine); skills that
-     need the pinned version read docs/engine-reference/<engine>/VERSION.md on
-     demand regardless of this import. -->
-@docs/engine-reference/godot/VERSION.md
+No engine reference applies: this project has no game engine. The browser and
+Node APIs are stable and covered by the model's own knowledge.
 
 
 ## Technical Preferences

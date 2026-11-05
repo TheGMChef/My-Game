@@ -25,3 +25,13 @@ framework:
 # here. `/settings --local <key>=<value>` writes there; `/settings <key>=<value>`
 # edits this file. See `.claude/docs/config-resolution.md` for the full
 # precedence order.
+
+# Custom stack (no Godot/Unity/Unreal). engine.name is deliberately left unset, so
+# skills spawn no engine specialist and warn once instead.
+stack:
+  runtime: web
+  language: typescript
+  bundler: vite
+  code_root: src
+  test_command: npm test
+  platform_order: [web, tablet, mobile]
