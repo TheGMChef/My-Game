@@ -11,10 +11,11 @@ They stay out of git (`data/local/`, gitignored) because the GitHub repo is publ
 - Standing owner rules (see CLAUDE.md): ask before writing files in collaboration flows, no commits without instruction, verify UI with retained screenshots in `production/qa/evidence/`.
 
 ## State at handoff
-- 210 gdUnit4 tests pass headless, plus 5 pytest tests for the importer (`tests/tools`).
+- 231 gdUnit4 tests pass headless, plus 7 pytest tests for the importer (`tests/tools`).
+- Weapon keywords done: TWIN-LINKED, ASSAULT, PSYCHIC, PRECISION, ONE SHOT, INDIRECT FIRE (unit-level, not per model). A 40-game AI-vs-AI soak on converted armies ran clean (`godot --headless --path . -s tools/soak_armies.gd -- <games> [armyA armyB]`).
 - Playable: roster screen, then the board (HUD, odds panel, AI turn playback, game over), desktop and tablet.
 - Web export works (`build/web`, gitignored). Roster file upload works in Chromium.
-- Last commits: roster screen, importer tooling, tablet layout, web export preset.
+- Last commit `93102ff`: keywords, indirect fire, AI fight-skip fix (the AI now skips units that cannot attack so the Fight phase ends), mapper keeps same-name ranged and melee profiles.
 
 ## Architecture
 - `src/engine/`: rules and state, no UI. `battle.gd` (Battle.cmd_* commands, plain-data events), `unit_state.gd`, `weapon.gd`, `weapon_ability.gd`, `attack_resolver.gd`, `simple_ai.gd` (AI uses the same command API), `army_loader.gd` (finds and prepares army JSON).
@@ -40,11 +41,11 @@ They stay out of git (`data/local/`, gitignored) because the GitHub repo is publ
 
 ## Open items, in suggested order
 1. DONE: weapon keywords TWIN-LINKED (re-roll wounds, unverified for 11th), ASSAULT, PSYCHIC, PRECISION, ONE SHOT, INDIRECT FIRE. `tools/soak_armies.gd` runs AI-vs-AI games on local armies.
-2. Known gaps: per-weapon counts ignored, no profile choice (standard/supercharge), mixed-model units use the first stat line.
+2. Mapper: if a default loadout names no melee or ranged weapon, the first spare one is added and logged as a warning in the report (Space Marines about 25, Necrons 4, T'au 2).
 3. Per-weapon counts (for example two carbines on one model), profile choice (standard vs overcharge), mixed-model units (engine uses the first stat line).
 4. Leaders and attached units, transports, wargear options, reserves and Deep Strike, Infiltrators, Scouts, aircraft, Deadly Demise, stratagems, desperate escape, overrun fights.
 5. Verify datasheet values against the 11th edition packs, unit by unit. Base sizes are estimated (`ArmyLoader.guess_base_mm`).
-6. AI-vs-AI soak games with converted armies to find odd units.
+6. Keep soaking after each rules change; look for VP above about 60 per side or games that do not end.
 7. Housekeeping: `project.yaml` commands use bare `godot`. Real-tablet testing is unverified. Consider hosting the web build.
 8. History note: an early commit includes roster screenshots showing real unit names. Replaced in the next commit, still in git history. Scrub only if the owner asks.
 
