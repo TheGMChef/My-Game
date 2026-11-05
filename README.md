@@ -8,12 +8,12 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
 
 ## Status
 
-- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (65 tests passing headless).
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (93 tests passing headless).
   Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
-  sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), the full hit / wound / save /
+  sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
-- **Not built yet:** phases and turn flow, movement and coherency, charges, fights, terrain and line of sight,
-  stratagems, transports, attached units, reserves, battle-shock, UI, AI.
+- **Not built yet:** charges, fights, terrain and line of sight,
+  stratagems, transports, attached units, reserves, desperate escape, UI, AI.
 - **Rules source:** official 11th edition PDFs, summarised in own words in `design/rules/`. Gaps that the PDFs do not
   cover (modifier caps, re-rolls, points) are listed there and are not guessed.
 - **Scenario:** `assets/data/scenario_clash_of_patrols.json` is a placeholder from the 2023 (10th edition) Combat Patrol
@@ -27,7 +27,7 @@ Godot 4.7.2 on your PATH, then: `godot --headless --path . --import`, then
 
 ## Next steps
 
-1. Turn flow and phases, movement legality (coherency, engagement range).
+1. Charges, pile-in, fights and consolidation.
 2. Terrain, cover and visibility in 2D.
 3. A first playable board and a simple AI.
 

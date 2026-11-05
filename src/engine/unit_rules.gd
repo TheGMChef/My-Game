@@ -1,0 +1,104 @@
+class_name UnitRules
+extends RefCounted
+## Coherency, engagement, leadership and movement legality (core rules 01, 03, 09).
+##
+## Not yet checked: moving through enemy models, terrain costs, flying, desperate escape,
+## vertical distances (the board is flat 2D, so the 5" vertical limits always pass).
+
+const COHERENCY_NEAR := 2.0
+const COHERENCY_FAR := 9.0
+const ENGAGEMENT_RANGE := 2.0
+
+
+## True if every model is within 2" of another model and within 9" of all the others.
+static func in_coherency(positions: Array[Vector2], radius: float) -> bool:
+	if positions.size() <= 1:
+		return true
+	for i in range(positions.size()):
+		var near: bool = false
+		for j in range(positions.size()):
+			if i == j:
+				continue
+			var gap: float = Geo.edge_distance(positions[i], radius, positions[j], radius)
+			if gap > COHERENCY_FAR:
+				return false
+			if gap <= COHERENCY_NEAR:
+				near = true
+		if not near:
+			return false
+	return true
+
+
+## True if any model of [param unit] is within engagement range of an enemy model.
+static func engaged(unit: UnitState, all_units: Array) -> bool:
+	for other in all_units:
+		if other.owner == unit.owner:
+			continue
+		for m in unit.models:
+			for n in other.models:
+				if Geo.edge_distance(m["pos"], unit.base_radius, n["pos"], other.base_radius) <= ENGAGEMENT_RANGE:
+					return true
+	return false
+
+
+## Leadership roll (01.06): 2D6 equal to or above the unit's Ld.
+static func leadership_roll(unit: UnitState, dice: Dice) -> bool:
+	return dice.roll("2D6") >= unit.leadership
+
+
+## Battle-shock roll (01.07): a failed roll battle-shocks the unit. Returns true if it passed.
+## A passed roll does not clear an existing shock here; the Command phase does that.
+static func battle_shock_roll(unit: UnitState, dice: Dice) -> bool:
+	var passed: bool = leadership_roll(unit, dice)
+	if not passed:
+		unit.battle_shocked = true
+	return passed
+
+
+## Check a proposed move. [param mode] is "normal", "advance" or "fall_back".
+## Returns {"ok": bool, "reason": String}.
+static func check_move(unit: UnitState, new_positions: Array[Vector2], mode: String,
+		all_units: Array, board: Rect2, advance_roll: int = 0) -> Dictionary:
+	if new_positions.size() != unit.models.size():
+		return _no("one new position is needed for each model")
+	var is_engaged: bool = engaged(unit, all_units)
+	var allowed: float = unit.move
+	match mode:
+		"normal":
+			if is_engaged:
+				return _no("an engaged unit cannot make a normal move")
+		"advance":
+			if is_engaged:
+				return _no("an engaged unit cannot advance")
+			allowed += float(advance_roll)
+		"fall_back":
+			if not is_engaged:
+				return _no("only an engaged unit can fall back")
+			if unit.battle_shocked:
+				return _no("a battle-shocked unit cannot make an ordered retreat (desperate escape is not implemented)")
+		_:
+			return _no("unknown move mode")
+	for i in range(new_positions.size()):
+		if not board.has_point(new_positions[i]):
+			return _no("model %d would leave the battlefield" % i)
+		if unit.models[i]["pos"].distance_to(new_positions[i]) > allowed + 0.0001:
+			return _no("model %d moves further than %.1f\"" % [i, allowed])
+	if not in_coherency(new_positions, unit.base_radius):
+		return _no("the unit would not be in coherency")
+	var moved := UnitState.new()
+	moved.owner = unit.owner
+	moved.base_radius = unit.base_radius
+	for p in new_positions:
+		moved.models.append({"pos": p})
+	var others: Array = []
+	for u in all_units:
+		if u != unit:
+			others.append(u)
+	others.append(moved)
+	if engaged(moved, others):
+		return _no("the unit must end its move unengaged")
+	return {"ok": true, "reason": ""}
+
+
+static func _no(reason: String) -> Dictionary:
+	return {"ok": false, "reason": reason}
