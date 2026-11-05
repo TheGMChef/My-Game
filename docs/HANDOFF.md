@@ -1,7 +1,8 @@
 # Project handoff (for Claude Code)
 
 Personal-use 40k battle simulator. Repo: TheGMChef/My-Game, branch `main`. Not for release or sharing.
-Never commit Games Workshop datasheet text or army data. Users load their own JSON.
+The owner has supplied official datasheets and rules PDFs and approved using them for development: converting them, running and testing the game with them, and reading them for rules work.
+They stay out of git (`data/local/`, gitignored) because the GitHub repo is public. If the owner wants them committed, make the repo private first, then ask for explicit confirmation.
 
 ## What it is
 - 2D top-down, you vs a scripted AI. Godot 4.7.2, GDScript, Compatibility renderer.
