@@ -30,6 +30,9 @@ CORE_STAND_INS = {
     "HOVER": "no aircraft rules, so unused",
     "SUPER-HEAVY WALKER": "moves as a normal unit",
 }
+# Army rules, stored on the unit. Those the engine lacks are logged in the report by the engine list.
+FACTION_ABILITIES = {"REANIMATION PROTOCOLS", "SYNAPSE", "SHADOW IN THE WARP", "FOR THE GREATER GOOD", "NURGLES GIFT",
+                     "OATH OF MOMENT", "EYE OF THE ANCESTORS", "KILL TEAM"}
 # Ability values rolled on a die become their average, rounded up.
 DICE_AVERAGE = {"D3": 2, "D6": 4}
 TYPO_FIXES = {"ANTI-VECHILE": "ANTI-VEHICLE", "DEVESTATING WOUNDS": "DEVASTATING WOUNDS", "DEVESTATINGWOUNDS": "DEVASTATING WOUNDS", "TWIN -LINKED": "TWIN-LINKED"}
@@ -89,6 +92,9 @@ def weapon_of(w, unit_issues, uname):
             unit_issues.append(("info", f"{name}: [{c}] uses fixed value {fixed}; the engine has no dice values for abilities"))
             c = fixed
         abilities.append(c)
+    if "pistol" in name.lower() and "PISTOL" not in abilities and w["range"] != "Melee":
+        abilities.append("PISTOL")
+        unit_issues.append(("warn", f"{name}: PISTOL tag added from the weapon's name"))
     skill = 0 if w["skill"] == "N/A" else num(w["skill"])
     if w["skill"] == "N/A" and "TORRENT" not in abilities:
         unit_issues.append(("warn", f"{name}: skill N/A without TORRENT"))
@@ -153,10 +159,15 @@ def composition(rec, issues):
 
 def core_abilities(rec, unit, issues):
     """Turn the datasheet's CORE and FACTION lines into engine data, logging what can't apply."""
-    applied = []
+    applied, faction = [], []
     for line in rec.get("ability_text", []):
         if line.startswith("FACTION:"):
-            issues.append(("info", f"faction ability not applied: {line[8:].strip()}"))
+            for part in line[8:].split(","):
+                name = re.sub(r"[^A-Z ]", "", part.upper().replace("’", "").replace("'", "").replace("(AURA)", "")).strip()
+                if name in FACTION_ABILITIES:
+                    faction.append(name)
+                elif name != "LEADER":
+                    issues.append(("info", f"faction ability not applied: {part.strip()}"))
             continue
         if not line.startswith("CORE:"):
             continue
@@ -176,6 +187,7 @@ def core_abilities(rec, unit, issues):
             elif name:
                 issues.append(("warn", f"core ability not recognised: {part.strip()}"))
     unit["abilities"] = applied
+    unit["faction_abilities"] = faction
 
 
 def map_unit(rec):
@@ -227,7 +239,9 @@ def map_unit(rec):
         issues.append(("info", "has wargear options (not selectable yet)"))
     if any(re.search(r"\bLEADER\b", x) for x in rec.get("page2_raw", [])) or "Leader" in " ".join(rec.get("ability_text", [])):
         issues.append(("info", "Leader: attachment not modelled yet"))
-    kws = [k.upper() for k in rec.get("keywords", [])]
+    # Mixed units print "KEYWORDS – ALL MODELS: INFANTRY" or "MODEL NAME: CHARACTER".
+    kws = [" ".join(k.upper().split(":")[-1].split()) for k in rec.get("keywords", [])]
+    kws = [k.replace("I NFANTRY", "INFANTRY") for k in kws]
     unit = {
         "name": " ".join(rec["name"].split()), "models": lo, "models_min": lo, "models_max": hi,
         "move": num(prof["m"]), "toughness": int(prof["t"]), "save": num(prof["sv"], 7),

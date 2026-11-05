@@ -18,6 +18,8 @@ Section numbers refer to the official core rules PDF (1 Jun 2026) as summarised 
 | Objectives and VP (mission data) | `missions.gd` | Placeholder scenario |
 | Weapon abilities (24) | `attack_resolver.gd`, `combat.gd` | Anti, Blast, Cleave, Close-quarters flag, Devastating Wounds, Extra Attacks, Hazardous, Heavy, Ignores Cover, Lance, Lethal Hits, Melta, Rapid Fire, Sustained Hits, Torrent |
 | Feel No Pain, Fights First (24.12, 24.13) | `attack_resolver.gd`, `unit_state.gd` | |
+| Stealth, Lone Operative, Deadly Demise (24) | `combat.gd`, `battle.gd` | Deadly Demise rolls once per unit |
+| Faction army rules | `army_rules.gd`, `battle.gd` | See `keyword-conversion.md` |
 
 ## Simplifications that matter
 - **Save groups:** every model in a unit shares one profile. CHARACTER models are only ordered last.
@@ -27,7 +29,7 @@ Section numbers refer to the official core rules PDF (1 Jun 2026) as summarised 
 
 ## Not implemented yet
 Stratagems, transports and embarking, attached units and leaders, strategic reserves and ingress,
-aircraft, flying and Super-heavy Walker, desperate escape, overrun fights, Deadly Demise, Scouts and Infiltrators, actions, secured objectives, deployment, the Fire Overwatch
+aircraft, flying and Super-heavy Walker, desperate escape, overrun fights, Scouts and Infiltrators, actions, secured objectives, deployment, the Fire Overwatch
 and Heroic Intervention stratagems, UI and a smarter AI.
 
 ## Not sourceable from the supplied PDFs (left out on purpose)

@@ -53,6 +53,6 @@ func start_command_phase(units: Array, dice: Dice) -> void:
 		if not (u.battle_shocked or u.at_or_below_half_strength()):
 			continue
 		var was_shocked: bool = u.battle_shocked
-		var passed: bool = UnitRules.battle_shock_roll(u, dice)
+		var passed: bool = UnitRules.battle_shock_roll(u, dice, units)
 		if was_shocked and passed:
 			u.battle_shocked = false

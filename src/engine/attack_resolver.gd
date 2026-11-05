@@ -34,7 +34,8 @@ static func wound_threshold(strength: int, toughness: int) -> int:
 ## Skill and hit modifier for the weapon after cover, [HEAVY] and [PSYCHIC]. A [PSYCHIC] weapon
 ## ignores penalties to BS/WS and to the hit roll (24.29) but keeps bonuses.
 static func hit_numbers(weapon: Weapon, ctx: Dictionary) -> Dictionary:
-	var skill: int = weapon.skill + (1 if bool(ctx.get("cover", false)) and not weapon.has("IGNORES COVER") else 0)
+	var in_cover: bool = bool(ctx.get("cover", false)) and not weapon.has("IGNORES COVER") and not bool(ctx.get("ignores_cover", false))
+	var skill: int = weapon.skill + (1 if in_cover else 0) - int(ctx.get("guided_bonus", 0))
 	var hit_mod: int = int(ctx.get("hit_mod", 0)) + (1 if bool(ctx.get("heavy_bonus", false)) and weapon.has("HEAVY") else 0)
 	if weapon.has("PSYCHIC"):
 		skill = mini(skill, weapon.skill)
@@ -127,7 +128,7 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 		to_wound += 1
 
 	# 2. Wound rolls
-	var threshold: int = wound_threshold(weapon.strength, target.toughness)
+	var threshold: int = wound_threshold(weapon.strength + int(ctx.get("strength_bonus", 0)), target.toughness)
 	var wound_mod: int = int(ctx.get("wound_mod", 0)) + (1 if bool(ctx.get("charged", false)) and weapon.has("LANCE") else 0)
 	var anti: Dictionary = weapon.ability("ANTI", target.keywords)
 	var anti_at: int = int(anti["threshold"]) if not anti.is_empty() else 7

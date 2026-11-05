@@ -117,3 +117,14 @@ def test_dice_valued_ability_becomes_its_fixed_average():
 def test_gaps_in_unit_names_are_collapsed():
     unit, _ = m.map_unit(fake(name="TEST     SQUAD"))
     assert unit["name"] == "TEST SQUAD"
+
+
+def test_faction_abilities_are_stored_on_the_unit():
+    unit, _ = m.map_unit(fake(ability_text=["FACTION: Synapse, Test Protocol"]))
+    assert unit["faction_abilities"] == ["SYNAPSE"]
+
+
+def test_pistol_tag_is_added_from_the_weapon_name():
+    weapon = {"name": "Odd bolt pistol", "kind": "ranged", "range": '12"', "a": "1", "skill": "3+", "s": "4", "ap": "0", "d": "1"}
+    unit, _ = m.map_unit(fake(weapons=[weapon], composition_raw=["■ 1 Test", "This model is equipped with: odd bolt pistol."]))
+    assert unit["weapons"][0]["abilities"] == ["PISTOL"]

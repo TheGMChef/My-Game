@@ -21,6 +21,8 @@ var starting_strength: int = 0
 var battle_shocked: bool = false
 ## Core abilities in upper case, e.g. "FIGHTS FIRST", "STEALTH".
 var abilities: Array[String] = []
+## Faction army rules in upper case, e.g. "SYNAPSE". See [ArmyRules].
+var faction_abilities: Array[String] = []
 var deadly_demise: String = ""  ## mortal wounds on a 6 when destroyed, "" = none
 var last_position: Vector2 = Vector2.ZERO  ## where the most recent model was destroyed
 ## Turn flags, cleared at the end of each player turn by [method reset_turn_flags].
@@ -51,8 +53,10 @@ static func from_dict(d: Dictionary, unit_id: String, owner_id: int, origin: Vec
 	u.objective_control = int(d.get("oc", 1))
 	u.leadership = int(d.get("leadership", 6))
 	u.base_radius = float(d.get("base_mm", 32)) / 25.4 / 2.0
-	for k in d.get("keywords", []):
+	for k in d.get("keywords", []) + d.get("faction_keywords", []):
 		u.keywords.append(str(k).to_upper())
+	for a in d.get("faction_abilities", []):
+		u.faction_abilities.append(str(a).to_upper())
 	for a in d.get("abilities", []):
 		u.abilities.append(str(a).to_upper())
 	for w in d.get("weapons", []):

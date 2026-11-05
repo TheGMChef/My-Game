@@ -58,7 +58,10 @@ func _step() -> void:
 		_tried.clear()
 	var phase: String = b.phase()
 	var acted: bool = false
-	if phase == "movement":
+	if phase == "command" and _enabled("button.shadow"):
+		await _press("button.shadow")
+		acted = true
+	elif phase == "movement":
 		acted = await _next_unit(func(u: UnitState) -> bool: return not b.has_moved(u), _move)
 	elif phase == "shooting":
 		acted = await _next_unit(func(u: UnitState) -> bool: return not b.has_shot(u), _shoot)
@@ -112,6 +115,8 @@ func _shoot(u: UnitState) -> void:
 	if targets.is_empty():
 		return
 	game._on_unit_tapped(targets[rng.randi_range(0, targets.size() - 1)])
+	if rng.randf() < 0.3 and _enabled("button.mark_spotted"):
+		await _press("button.mark_spotted")
 	await _press("button.fire")
 
 

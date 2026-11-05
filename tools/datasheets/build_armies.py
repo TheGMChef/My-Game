@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Builds every army file from a folder of faction folders of datasheet PDFs.
 
-Each faction becomes data/local/army_<faction>.json plus a conversion report beside it.
+Each faction becomes data/local/army_<faction>.json plus a conversion report beside it, then
+data/local/corrections/<faction>.json is applied if it exists.
 Output stays local (data/local/), never in git.
 
 Usage: build_armies.py <pdf_root>
@@ -32,6 +33,12 @@ def main() -> int:
                 if result.returncode != 0:
                     failures += 1
                     break
+        corrections = OUT / "corrections" / f"{faction.name}.json"
+        if corrections.exists():
+            result = subprocess.run([sys.executable, str(HERE / "apply_corrections.py"), str(OUT / f"army_{faction.name}.json"),
+                                     str(corrections), str(OUT / f"report_{faction.name}.md")], capture_output=True, text=True)
+            print(f"{faction.name}: {result.stdout.strip()}")
+            failures += 1 if result.returncode != 0 else 0
     return 1 if failures else 0
 
 

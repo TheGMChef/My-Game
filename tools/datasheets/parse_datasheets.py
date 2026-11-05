@@ -93,15 +93,20 @@ def parse_page1(lines: list[str], rec: dict) -> None:
                 pending.append(s)
     if pending:
         rec["unparsed"].append("dangling weapon text: " + " ".join(pending))
-    # keywords (full width, after table)
-    ik = next((i for i, l in enumerate(lines) if i > wh and "FACTION KEYWORDS" in l), end)
-    kw_block = lines[min(end, ik):]
-    kw_left, fk_right = [], []
+
+
+def parse_keywords(lines: list[str], rec: dict) -> None:
+    """KEYWORDS and FACTION KEYWORDS, from the page's last lines."""
+    start = next((i for i, l in enumerate(lines) if l.lstrip().startswith("KEYWORDS")), None)
+    if start is None:
+        return
+    kw_block = lines[start:]
     fk_col = None
     for l in kw_block:
         if "FACTION KEYWORDS" in l:
             fk_col = l.find("FACTION KEYWORDS")
             break
+    kw_left, fk_right = [], []
     for l in kw_block:
         if not l.strip():
             continue
@@ -111,13 +116,11 @@ def parse_page1(lines: list[str], rec: dict) -> None:
             kw_left.append(left.strip())
         if right.strip():
             fk_right.append(right.strip())
-    kws = " ".join(kw_left)
-    kws = re.sub(r"^KEYWORDS:\s*", "", kws)
+    kws = re.sub(r"^KEYWORDS:\s*", "", " ".join(kw_left))
     kws = re.sub(r"[\x00-\x1f]", "", kws)
-    rec["keywords"] = [k.strip() for k in re.split(r",\s*", kws) if k.strip()]
-    fk = " ".join(fk_right)
-    fk = re.sub(r"^FACTION KEYWORDS:\s*", "", fk)
-    rec["faction_keywords"] = [k.strip() for k in re.split(r",\s*", fk) if k.strip()]
+    rec["keywords"] = [" ".join(k.split()) for k in re.split(r",\s*", kws) if k.strip()]
+    fk = re.sub(r"^FACTION KEYWORDS:\s*", "", " ".join(fk_right))
+    rec["faction_keywords"] = [" ".join(k.split()) for k in re.split(r",\s*", fk) if k.strip()]
 
 
 def parse_page2(lines: list[str], rec: dict) -> None:
@@ -144,8 +147,10 @@ def parse_pdf(pdf: Path) -> dict:
     rec = {"source_file": pdf.name, "unparsed": []}
     p1 = pages[0].splitlines()
     parse_page1(p1, rec)
-    # -table can split words in a large title, so the name comes from -layout.
-    rec["name"] = next((l.strip() for l in pdf_pages(pdf, "-layout")[0].splitlines() if l.strip()), rec["name"])
+    # -table can split words in large text, so names and keywords come from -layout.
+    plain = pdf_pages(pdf, "-layout")[0].splitlines()
+    rec["name"] = next((l.strip() for l in plain if l.strip()), rec["name"])
+    parse_keywords(plain, rec)
     full = "\n".join(pages)
     inv = re.search(r"INVULNERABLE SAVE\s*(\d)\+", full) or re.search(r"(\d)\+\s+INVULNERABLE SAVE", full)
     rec["invuln_printed"] = int(inv.group(1)) if inv else None

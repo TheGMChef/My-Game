@@ -161,5 +161,10 @@
  "stat.leadership": "Ld",
  "stat.oc": "OC",
  "roster.picks_title": "Selected",
- "log.deadly_demise": "%s exploded: %d mortal wounds to each unit nearby."
+ "log.deadly_demise": "%s exploded: %d mortal wounds to each unit nearby.",
+ "button.shadow": "Shadow in the Warp",
+ "button.mark_spotted": "Mark as Spotted",
+ "log.reanimated": "%s reanimated %d wounds.",
+ "log.shadow": "The Shadow in the Warp battle-shocked %d units.",
+ "log.spotted": "%s marked %s as Spotted."
 }

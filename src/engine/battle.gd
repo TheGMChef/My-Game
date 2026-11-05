@@ -7,6 +7,11 @@ extends RefCounted
 ## plain data, so a UI can show it without owning any game state.
 
 const DEADLY_DEMISE_RANGE := 6.0
+const REANIMATION_DICE := "D3"
+
+var _shadow_used: Array[int] = []
+var _observers: Array = []
+var _spotted: Dictionary = {}            # target -> the Observer that marked it
 
 var scenario: Dictionary
 var units: Array = []
@@ -99,6 +104,15 @@ func _deadly_demise(u: UnitState) -> void:
 	remove_destroyed()
 
 
+## Reanimation Protocols: at the end of your Command phase, each unit with the rule heals D3 wounds.
+func _reanimation(side: int) -> void:
+	for u in living(side):
+		if u.faction_abilities.has("REANIMATION PROTOCOLS"):
+			var healed: int = ArmyRules.reanimate(u, dice.roll(REANIMATION_DICE), units, board)
+			if healed > 0:
+				_emit("reanimated", side, {"unit": u.id, "wounds": healed})
+
+
 func unit_by_id(unit_id: String) -> UnitState:
 	for u in units:
 		if u.id == unit_id:
@@ -179,7 +193,12 @@ func begin_turn() -> void:
 		if u.battle_shocked:
 			shocked_now.append(u.id)
 	_emit("turn_start", side, {"round": flow.round_no, "cp": flow.command_points.duplicate(), "shocked": shocked_now})
+	_observers.clear()
+	_spotted.clear()
+	_reanimation(side)
 	_score("end_of_command_phase")
+	if ai_sides[side]:
+		SimpleAI.command(self, side)
 
 
 ## Move to the next phase (or sub-step of the Fight phase). Returns {ok, reason}.
@@ -282,7 +301,7 @@ func _shoot_ctx() -> Dictionary:
 ## What shooting would involve, with exact odds per weapon. Does not roll.
 func shoot_preview(u: UnitState, target: UnitState) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for entry in Combat.shoot_plan(u, target, units, _shoot_ctx()):
+	for entry in Combat.shoot_plan(u, target, units, _shoot_ctx_for(u, target)):
 		out.append({"weapon": entry["weapon"], "models": entry["models"], "ctx": entry["ctx"],
 			"odds": AttackOdds.compute(entry["weapon"], target, entry["ctx"])})
 	return out
@@ -298,12 +317,76 @@ func cmd_shoot(u: UnitState, target: UnitState) -> Dictionary:
 		return _no("choose an enemy unit")
 	if shoot_preview(u, target).is_empty():
 		return _no("no weapon can reach and see that unit")
-	var result: Dictionary = Combat.shoot(u, target, units, dice, _shoot_ctx())
+	var result: Dictionary = Combat.shoot(u, target, units, dice, _shoot_ctx_for(u, target))
 	_shot.append(u)
 	_emit("shoot", u.owner, {"unit": u.id, "target": target.id, "reports": result["reports"],
 		"hazard_wounds": result["hazard_wounds"]})
 	remove_destroyed()
 	return {"ok": true, "reason": "", "result": result}
+
+
+# ---------------------------------------------------------------- army rules
+
+## Shadow in the Warp: once per battle, in a Command phase, with a unit that has the rule alive.
+func can_unleash_shadow(side: int) -> bool:
+	if _shadow_used.has(side) or is_over() or flow.phase() != "command":
+		return false
+	return living(side).any(func(u: UnitState) -> bool: return u.faction_abilities.has("SHADOW IN THE WARP"))
+
+
+## Every enemy unit tests Battle-shock, at -1 if within 6" of one of your SYNAPSE units.
+func cmd_shadow_in_the_warp(side: int) -> Dictionary:
+	if not can_unleash_shadow(side):
+		return _no("the Shadow in the Warp is not available")
+	_shadow_used.append(side)
+	var shocked: Array[String] = []
+	for u in living(1 - side):
+		var modifier: int = -1 if ArmyRules.near_synapse_of(u, units, side) else 0
+		if not UnitRules.battle_shock_roll(u, dice, units, modifier):
+			shocked.append(u.id)
+	_emit("shadow_in_the_warp", side, {"shocked": shocked})
+	return _yes()
+
+
+## For the Greater Good: a unit with the rule that has not shot can become an Observer.
+func can_observe(u: UnitState) -> bool:
+	return flow.phase() == "shooting" and u.owner == flow.active_player and not is_over() \
+			and u.faction_abilities.has("FOR THE GREATER GOOD") and not _observers.has(u) and not _shot.has(u) \
+			and not u.battle_shocked and not u.has_keyword("FORTIFICATION")
+
+
+func can_be_spotted(target: UnitState) -> bool:
+	return not _spotted.has(target) and not target.is_destroyed()
+
+
+## Mark a visible enemy as this Observer's Spotted unit until the end of the phase.
+func cmd_mark_spotted(observer: UnitState, target: UnitState) -> Dictionary:
+	if not can_observe(observer):
+		return _no("this unit cannot be an Observer now")
+	if target.owner == observer.owner or not can_be_spotted(target):
+		return _no("that unit cannot be marked")
+	var seen: bool = terrain.is_empty()
+	for m in observer.models:
+		seen = seen or Visibility.unit_visible_to_model(m["pos"], observer.base_radius, target, turn_no, terrain)
+	if not seen:
+		return _no("that unit is not visible")
+	_observers.append(observer)
+	_spotted[target] = observer
+	_emit("spotted", observer.owner, {"unit": observer.id, "target": target.id})
+	return _yes()
+
+
+## The context for this unit shooting this target, including Guided bonuses.
+func _shoot_ctx_for(u: UnitState, target: UnitState) -> Dictionary:
+	var ctx: Dictionary = _shoot_ctx()
+	if _spotted.has(target) and u.faction_abilities.has("FOR THE GREATER GOOD") and not _observers.has(u):
+		ctx["guided_bonus"] = 1
+		ctx["ignores_cover"] = (_spotted[target] as UnitState).has_keyword("MARKERLIGHT")
+	return ctx
+
+
+func _fight_ctx(u: UnitState) -> Dictionary:
+	return {"strength_bonus": 1} if ArmyRules.in_synapse(u, units) else {}
 
 
 # ---------------------------------------------------------------- charge phase
@@ -427,7 +510,7 @@ func cmd_pile_in(u: UnitState, positions: Array[Vector2]) -> Dictionary:
 
 func fight_preview(u: UnitState, target: UnitState) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for entry in Combat.fight_plan(u, target, {}):
+	for entry in Combat.fight_plan(u, target, _fight_ctx(u)):
 		out.append({"weapon": entry["weapon"], "models": entry["models"], "ctx": entry["ctx"],
 			"odds": AttackOdds.compute(entry["weapon"], target, entry["ctx"])})
 	return out
@@ -441,7 +524,7 @@ func cmd_fight(u: UnitState, target: UnitState) -> Dictionary:
 	if target.owner == u.owner or target.is_destroyed() or fight_preview(u, target).is_empty():
 		return _no("choose an enemy unit this unit is engaged with")
 	_seq.select(u)
-	var result: Dictionary = Combat.fight(u, target, dice, {})
+	var result: Dictionary = Combat.fight(u, target, dice, _fight_ctx(u))
 	_emit("fight", u.owner, {"unit": u.id, "target": target.id, "reports": result["reports"],
 		"hazard_wounds": result["hazard_wounds"]})
 	remove_destroyed()

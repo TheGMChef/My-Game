@@ -5,6 +5,12 @@ extends RefCounted
 ## It issues the same commands a human does, through [Battle].
 
 
+## Holds the Shadow in the Warp until the second round, when units are close enough to matter.
+static func command(b: Battle, side: int) -> void:
+	if b.flow.round_no >= 2 and b.can_unleash_shadow(side):
+		b.cmd_shadow_in_the_warp(side)
+
+
 static func movement(b: Battle, side: int) -> void:
 	for u in b.living(side):
 		if UnitRules.engaged(u, b.units):
@@ -20,7 +26,16 @@ static func movement(b: Battle, side: int) -> void:
 			b.cmd_hold(u)
 
 
+## The first unit able to observe marks the nearest enemy for the rest of the army.
+static func _mark_target(b: Battle, side: int) -> void:
+	for u in b.living(side):
+		var target: UnitState = _nearest_enemy(b, u)
+		if target != null and b.can_observe(u) and b.cmd_mark_spotted(u, target)["ok"]:
+			return
+
+
 static func shooting(b: Battle, side: int) -> void:
+	_mark_target(b, side)
 	for u in b.living(side):
 		var target: UnitState = _nearest_enemy(b, u)
 		if target != null:

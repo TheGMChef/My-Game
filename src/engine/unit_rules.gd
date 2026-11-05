@@ -48,8 +48,10 @@ static func leadership_roll(unit: UnitState, dice: Dice) -> bool:
 
 ## Battle-shock roll (01.07): a failed roll battle-shocks the unit. Returns true if it passed.
 ## A passed roll does not clear an existing shock here; the Command phase does that.
-static func battle_shock_roll(unit: UnitState, dice: Dice) -> bool:
-	var passed: bool = leadership_roll(unit, dice)
+## In Synapse range the test is on 3D6. [param modifier] changes the total, as Shadow in the Warp does.
+static func battle_shock_roll(unit: UnitState, dice: Dice, units: Array = [], modifier: int = 0) -> bool:
+	var roll: int = dice.roll("3D6" if ArmyRules.in_synapse(unit, units) else "2D6")
+	var passed: bool = roll + modifier >= unit.leadership
 	if not passed:
 		unit.battle_shocked = true
 	return passed

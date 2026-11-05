@@ -704,6 +704,18 @@ func _on_fire_pressed() -> void:
 	_refresh()
 
 
+func _on_shadow_pressed() -> void:
+	_verdict = battle.cmd_shadow_in_the_warp(HUMAN)
+	_consume_events()
+	_refresh()
+
+
+func _on_mark_spotted_pressed() -> void:
+	_verdict = battle.cmd_mark_spotted(_selected, _target)
+	_consume_events()
+	_refresh()
+
+
 func _on_declare_pressed() -> void:
 	if _selected == null:
 		return
@@ -1008,6 +1020,12 @@ func _log_event(e: Dictionary) -> void:
 			line = UIText.t("log.destroyed", [str(_names.get(e["unit"], "?"))])
 		"deadly_demise":
 			line = UIText.t("log.deadly_demise", [who, int(e["wounds"])])
+		"reanimated":
+			line = UIText.t("log.reanimated", [who, int(e["wounds"])])
+		"shadow_in_the_warp":
+			line = UIText.t("log.shadow", [(e["shocked"] as Array).size()])
+		"spotted":
+			line = UIText.t("log.spotted", [who, str(_names.get(e["target"], "?"))])
 		"score":
 			line = UIText.t("log.score_one" if int(e["objectives"]) == 1 else "log.score", [side_word, int(e["vp"]), int(e["objectives"])])
 		"turn_end":
@@ -1139,6 +1157,8 @@ func _next_label() -> String:
 func _action_specs() -> Array[Dictionary]:
 	if _busy or battle.is_over():
 		return []
+	if battle.can_unleash_shadow(HUMAN) and battle.active_player() == HUMAN:
+		return [_act("button.shadow", _on_shadow_pressed)]
 	if _selected == null or _selected.owner != HUMAN:
 		if battle.phase() == "fight" and battle.fight_stage == "fight" and battle.fight_finished():
 			return [_hint("hint.fights_done")]
@@ -1195,8 +1215,11 @@ func _shooting_actions() -> Array[Dictionary]:
 		return [_hint("hint.already_shot")]
 	if _target == null:
 		return [_hint("hint.pick_target")]
-	return [_act("button.cancel", _on_cancel_pressed),
-		_main("button.fire", _on_fire_pressed, battle.shoot_preview(_selected, _target).is_empty())]
+	var specs: Array[Dictionary] = [_act("button.cancel", _on_cancel_pressed)]
+	if battle.can_observe(_selected) and battle.can_be_spotted(_target):
+		specs.append(_act("button.mark_spotted", _on_mark_spotted_pressed))
+	specs.append(_main("button.fire", _on_fire_pressed, battle.shoot_preview(_selected, _target).is_empty()))
+	return specs
 
 
 func _charge_actions() -> Array[Dictionary]:

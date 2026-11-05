@@ -36,7 +36,7 @@ static func compute(weapon: Weapon, target: UnitState, ctx: Dictionary = {}) -> 
 	var wound_rolls: float = attacks * (p_hit - auto_wounds + extra_hits)
 
 	# Wound rolls
-	var threshold: int = AttackResolver.wound_threshold(weapon.strength, target.toughness)
+	var threshold: int = AttackResolver.wound_threshold(weapon.strength + int(ctx.get("strength_bonus", 0)), target.toughness)
 	var wound_mod: int = int(ctx.get("wound_mod", 0)) + (1 if bool(ctx.get("charged", false)) and weapon.has("LANCE") else 0)
 	var anti: Dictionary = weapon.ability("ANTI", target.keywords)
 	var anti_at: int = int(anti["threshold"]) if not anti.is_empty() else 7
