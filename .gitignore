@@ -177,3 +177,6 @@ $RECYCLE.BIN/
 /test-results/
 .godot/
 reports/
+
+# === Local datasheet data (user-supplied, never committed) ===
+data/local/
