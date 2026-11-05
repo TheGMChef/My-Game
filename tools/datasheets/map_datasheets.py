@@ -30,6 +30,8 @@ CORE_STAND_INS = {
     "HOVER": "no aircraft rules, so unused",
     "SUPER-HEAVY WALKER": "moves as a normal unit",
 }
+# Ability values rolled on a die become their average, rounded up.
+DICE_AVERAGE = {"D3": 2, "D6": 4}
 TYPO_FIXES = {"ANTI-VECHILE": "ANTI-VEHICLE", "DEVESTATING WOUNDS": "DEVASTATING WOUNDS", "DEVESTATINGWOUNDS": "DEVASTATING WOUNDS", "TWIN -LINKED": "TWIN-LINKED"}
 
 
@@ -81,6 +83,11 @@ def weapon_of(w, unit_issues, uname):
         c = clean_tag(t)
         if c.replace(" ", "") != t.upper().replace(" ", ""):
             unit_issues.append(("warn", f"typo or stray character in weapon tag '{t}' on {name}; read as '{c}'"))
+        dice = re.match(r"(.*) (D[36])$", c)
+        if dice:
+            fixed = f"{dice.group(1)} {DICE_AVERAGE[dice.group(2)]}"
+            unit_issues.append(("info", f"{name}: [{c}] uses fixed value {fixed}; the engine has no dice values for abilities"))
+            c = fixed
         abilities.append(c)
     skill = 0 if w["skill"] == "N/A" else num(w["skill"])
     if w["skill"] == "N/A" and "TORRENT" not in abilities:

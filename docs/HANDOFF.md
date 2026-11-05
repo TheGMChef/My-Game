@@ -34,6 +34,8 @@ They stay out of git (`data/local/`, gitignored) because the GitHub repo is publ
 - Playwright note: a zero-length click does not open the browser file picker. Use down, wait 150 ms, up.
 
 ## Datasheet pipeline
+
+* Rebuild every army: `python -X utf8 tools/datasheets/build_armies.py <folder of faction folders>`. PDFs live in `%LOCALAPPDATA%/Muster/datasheets`, outside OneDrive. Add `real` to `tools/playtest.gd` to play them. Keyword treatment is in `design/rules/keyword-conversion.md`.
 - Source: user's Drive folders of per-unit PDFs (T'au, Necrons, Tyranids, Death Guard, Space Marines), downloaded as zips. These are the 2023 10th edition indices, not 11th.
 - Stage 1 parses 402 sheets, 396 clean. Six flagged (second ability block on Primarch-style sheets).
 - Stage 2 picks the default loadout from "equipped with", keeps weapon counts, fixes source typos (ANTI-VECHILE, DEVESTATING, TWIN -LINKED), and logs issues.

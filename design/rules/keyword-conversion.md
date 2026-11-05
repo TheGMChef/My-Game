@@ -19,6 +19,7 @@ TORRENT, TWIN-LINKED.
 |---|---|---|
 | PISTOL | CLOSE-QUARTERS | The two are identical in 11th edition |
 | Squashed text such as SUSTAINEDHITS1 or ANTI-VEHICLE4+ | SUSTAINED HITS 1, ANTI-VEHICLE 4+ | The PDF text can lose spaces |
+| Dice values: SUSTAINED HITS D3, RAPID FIRE D6 | SUSTAINED HITS 2, RAPID FIRE 4 | The engine has no dice values for abilities, so these use the average, rounded up |
 | Source typos: ANTI-VECHILE, DEVESTATING WOUNDS, TWIN -LINKED | The correct spelling | Logged as a warning on the unit |
 
 HEAVY uses the 11th edition test (no model moved more than 3"), and TWIN-LINKED is a re-roll of the
@@ -43,6 +44,8 @@ wound roll. Any other tag is reported as "not applied".
 
 - **Unit-specific weapon rules** on fortifications, [DEFENSIVE ARRAY] and [HIVE DEFENCES], aren't core
   abilities. Reports list them as not applied.
+- **[CONVERSION]** isn't in the 11th edition core rules, and its current wording wasn't found. It's only
+  on two optional Leagues of Votann weapons, so it doesn't affect default loadouts. Reports list it.
 - **Faction rules** such as Reanimation Protocols and named unit abilities need the faction packs and
   their own engine work. Reports list them as not applied.
 - **Damaged profiles** are read from the sheet but not applied.

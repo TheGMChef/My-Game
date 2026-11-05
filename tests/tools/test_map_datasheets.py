@@ -105,3 +105,10 @@ def test_core_ability_the_engine_lacks_is_logged_with_its_stand_in():
 def test_faction_ability_is_logged_as_not_applied():
     _, issues = m.map_unit(fake(ability_text=["FACTION: Test Protocol"]))
     assert any("Test Protocol" in text and "not applied" in text for _, text in issues)
+
+
+def test_dice_valued_ability_becomes_its_fixed_average():
+    weapon = {"name": "Gun [SUSTAINED HITS D3, RAPID FIRE D6]", "kind": "ranged", "range": '24"', "a": "1", "skill": "3+", "s": "4", "ap": "0", "d": "1"}
+    unit, issues = m.map_unit(fake(weapons=[weapon], composition_raw=["■ 1 Test", "This model is equipped with: gun."]))
+    assert unit["weapons"][0]["abilities"] == ["SUSTAINED HITS 2", "RAPID FIRE 4"]
+    assert any("SUSTAINED HITS D3" in text and "fixed" in text for _, text in issues)
