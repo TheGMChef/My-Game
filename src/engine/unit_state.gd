@@ -52,9 +52,11 @@ static func from_dict(d: Dictionary, unit_id: String, owner_id: int, origin: Vec
 	for w in d.get("weapons", []):
 		u.weapons.append(Weapon.from_dict(w))
 	var count: int = int(d.get("models", 1))
+	var columns: int = mini(count, 5)
+	var spacing: float = u.base_radius * 2.0 + 0.1
 	for i in range(count):
 		u.models.append({
-			"pos": origin + Vector2(float(i) * (u.base_radius * 2.0 + 0.1), 0.0),
+			"pos": origin + Vector2(float(i % columns) * spacing, float(i / columns) * spacing),
 			"wounds": u.wounds_per_model,
 			"character": u.keywords.has("CHARACTER"),
 		})

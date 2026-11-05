@@ -8,7 +8,7 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
 
 ## Status
 
-- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (130 tests passing headless).
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (135 tests passing headless).
   Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
   sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, unit-level shooting and melee, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
@@ -20,6 +20,11 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
   book. `design/rules/combat-patrol-adaptation.md` lists what to change for 11th edition.
 - **An earlier TypeScript prototype** is kept in `prototypes/ts-battle-sim/` for reference.
 
+## Try a sample battle
+
+`godot --headless --path . -s tools/sim_battle.gd -- 1 2 3` plays three AI-versus-AI games on the placeholder
+scenario with invented placeholder armies and prints the results.
+
 ## Run the tests
 
 Godot 4.7.2 on your PATH, then: `godot --headless --path . --import`, then
@@ -27,7 +32,7 @@ Godot 4.7.2 on your PATH, then: `godot --headless --path . --import`, then
 
 ## Next steps
 
-1. A battle orchestrator and a simple AI, then terrain and line of sight.
+1. Terrain, cover and line of sight.
 2. Terrain, cover and visibility in 2D.
 3. A first playable board and a simple AI.
 
