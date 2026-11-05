@@ -101,9 +101,10 @@ func _run() -> void:
 					await r._on_fight_pressed()
 					fought_shot = true
 					continue
-			for u in b.fight_options():
-				b.cmd_fight_skip(u)
-			r._consume_events()
+			if not b.fight_options().is_empty():
+				r._on_unit_tapped(b.fight_options()[0])
+				await r._on_skip_fight_pressed()
+				continue
 		await r._on_next_pressed()
 		await process_frame
 	print("over: ", b.is_over(), " vp ", b.vp, " guard ", guard, " phase ", b.phase())

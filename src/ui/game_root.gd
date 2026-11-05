@@ -884,12 +884,18 @@ func _human_can_act_in_ai_turn() -> bool:
 	return true
 
 
+## Fight picks alternate, so the AI can have the next pick during the human's own turn.
+func _ai_has_fight_pick() -> bool:
+	return battle.phase() == "fight" and battle.fight_stage == "fight" \
+			and battle.fight_chooser() >= 0 and battle.fight_chooser() != HUMAN
+
+
 ## Run AI steps until the human has something to do (their turn, or a choice in the AI's turn).
 func _run_until_human_input() -> void:
 	var guard: int = 0
 	while guard < 200 and not battle.is_over():
 		guard += 1
-		if battle.active_player() == HUMAN:
+		if battle.active_player() == HUMAN and not _ai_has_fight_pick():
 			if battle.phase() == "command":
 				_begin_turn_once()
 				_consume_events()
