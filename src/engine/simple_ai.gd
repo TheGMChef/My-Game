@@ -2,6 +2,7 @@ class_name SimpleAI
 extends RefCounted
 ## A deliberately simple scripted opponent: advance on objectives, shoot the nearest enemy,
 ## charge if it can, fight the nearest engaged enemy. No lookahead and no LLM.
+## It issues the same commands a human does, through [Battle].
 
 
 static func movement(b: Battle, side: int) -> void:
@@ -9,51 +10,50 @@ static func movement(b: Battle, side: int) -> void:
 		if UnitRules.engaged(u, b.units):
 			continue
 		var goal: Vector2 = _goal(b, u)
-		_try_translate(b, u, goal, u.move, "normal")
+		var dist: float = minf(u.move, u.centre().distance_to(goal))
+		var done: bool = false
+		while dist > 0.25 and not done:
+			var dest: Array[Vector2] = _translated(u, goal, dist)
+			done = b.cmd_move(u, dest, "normal")["ok"]
+			dist -= 0.5
+		if not done:
+			b.cmd_hold(u)
 
 
 static func shooting(b: Battle, side: int) -> void:
 	for u in b.living(side):
 		var target: UnitState = _nearest_enemy(b, u)
-		if target == null:
-			continue
-		Combat.shoot(u, target, b.units, b.dice, {"terrain": b.terrain, "turn_no": b.turn_no})
-		b.remove_destroyed()
+		if target != null:
+			b.cmd_shoot(u, target)
 
 
 static func charging(b: Battle, side: int) -> void:
 	for u in b.living(side):
-		if not ChargeRules.eligible(u, b.units)["ok"]:
+		var declared: Dictionary = b.cmd_declare_charge(u)
+		if not declared["ok"] or declared["targets"].is_empty():
 			continue
-		var roll: int = ChargeRules.charge_roll(b.dice)
-		var options: Array[UnitState] = ChargeRules.possible_targets(u, b.units, roll)
-		if options.is_empty():
-			continue
-		var target: UnitState = options[0]
-		for dist in range(roll, 0, -1):
-			var dest: Array[Vector2] = _translated(u, target.centre(), float(dist))
-			var targets: Array[UnitState] = [target]
-			if ChargeRules.check_move(u, dest, targets, roll, b.units, b.board, b.terrain)["ok"]:
-				ChargeRules.apply_move(u, dest)
+		var target: UnitState = declared["targets"][0]
+		var targets: Array[UnitState] = [target]
+		var moved: bool = false
+		for dist in range(int(declared["roll"]), 0, -1):
+			if b.cmd_charge_move(u, _translated(u, target.centre(), float(dist)), targets)["ok"]:
+				moved = true
 				break
+		if not moved:
+			b.cmd_charge_fail(u)
 
 
-static func fighting(b: Battle, side: int) -> void:
-	var seq := FightSequencer.new()
-	seq.begin(b.units, side)
-	var guard: int = 0
-	while not seq.finished and guard < 40:
-		guard += 1
-		var opts: Array[UnitState] = seq.options()
-		if opts.is_empty():
-			break
-		var u: UnitState = opts[0]
-		seq.select(u)
+## Pick the first available unit for [param side] and fight the nearest engaged enemy.
+static func fight_one(b: Battle, side: int) -> void:
+	for u in b.fight_options():
+		if u.owner != side:
+			continue
 		var foe: UnitState = _nearest_enemy(b, u)
 		if foe != null and u.gap_to(foe) <= UnitRules.ENGAGEMENT_RANGE:
-			Combat.fight(u, foe, b.dice)
-		b.remove_destroyed()
-		seq.refresh()
+			b.cmd_fight(u, foe)
+		else:
+			b.cmd_fight_skip(u)
+		return
 
 
 static func _goal(b: Battle, u: UnitState) -> Vector2:
@@ -83,17 +83,6 @@ static func _nearest_enemy(b: Battle, u: UnitState) -> UnitState:
 				best_d = d
 				best = o
 	return best
-
-
-## Move every model by the same vector towards [param goal]; shorten the step until it is legal.
-static func _try_translate(b: Battle, u: UnitState, goal: Vector2, max_dist: float, mode: String) -> void:
-	var dist: float = minf(max_dist, u.centre().distance_to(goal))
-	while dist > 0.25:
-		var dest: Array[Vector2] = _translated(u, goal, dist)
-		if UnitRules.check_move(u, dest, mode, b.units, b.board, 0, b.terrain)["ok"]:
-			UnitRules.apply_move(u, dest, mode)
-			return
-		dist -= 0.5
 
 
 static func _translated(u: UnitState, goal: Vector2, dist: float) -> Array[Vector2]:

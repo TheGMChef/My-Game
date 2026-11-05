@@ -3,24 +3,28 @@ extends RefCounted
 ## Unit-level shooting and melee: picks weapons, counts attacking models, builds the context
 ## and calls [AttackResolver] for each weapon profile.
 ##
+## [method shoot_plan] and [method fight_plan] describe what would be rolled without rolling,
+## so the odds panel and the real attack always agree.
+##
 ## Not yet modelled: per-model weapon choice, targeting restrictions beyond visibility,
-## weapon choice per model, shooting types (assault, close-quarters, indirect), [ONE SHOT],
-## [PRECISION], allocation of attacks across several target units.
+## shooting types (assault, close-quarters, indirect), [ONE SHOT], [PRECISION], and splitting
+## attacks across several target units.
 
 
-## Shoot at [param target] with every ranged weapon of [param attacker] that has a model in
-## range. Returns {"reports": Array[Dictionary], "hazard_wounds": int}.
+## What shooting [param target] would involve: one entry per ranged weapon that has a model
+## in range with the target visible, each {"weapon", "ctx", "models"}.
 ## [param ctx] may hold "terrain" (Array of TerrainArea), "turn_no" (int, for hidden),
 ## "cover" (bool, overrides the automatic check) and "hit_mod" / "wound_mod" (int).
-static func shoot(attacker: UnitState, target: UnitState, all_units: Array, dice: Dice, ctx: Dictionary = {}) -> Dictionary:
-	var reports: Array[Dictionary] = []
+static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array, ctx: Dictionary = {}) -> Array[Dictionary]:
+	var plan: Array[Dictionary] = []
+	if target.is_destroyed():
+		return plan
 	var terrain: Array = ctx.get("terrain", [])
 	var turn_no: int = int(ctx.get("turn_no", 0))
-	var hazardous_used: int = 0
 	var stationary: bool = attacker.max_model_move <= 3.0 and not attacker.advanced
 	var unengaged: bool = not UnitRules.engaged(attacker, all_units)
 	for w in attacker.weapons:
-		if w.is_melee() or target.is_destroyed():
+		if w.is_melee():
 			continue
 		var in_range: int = 0
 		var in_half: int = 0
@@ -42,54 +46,77 @@ static func shoot(attacker: UnitState, target: UnitState, all_units: Array, dice
 				nearest_pos = m["pos"]
 		if in_range == 0:
 			continue
-		attacker.last_fired_turn = turn_no
 		var c: Dictionary = ctx.duplicate()
 		if not terrain.is_empty() and not c.has("cover"):
 			c["cover"] = Visibility.has_cover(nearest_pos, attacker.base_radius, target, terrain)
 		c["models_firing"] = in_range
 		c["half_range"] = in_half == in_range
 		c["heavy_bonus"] = stationary and unengaged
-		reports.append(AttackResolver.resolve(w, target, dice, c))
+		plan.append({"weapon": w, "ctx": c, "models": in_range})
+	return plan
+
+
+## Shoot at [param target]. Returns {"reports": Array[Dictionary], "hazard_wounds": int}.
+static func shoot(attacker: UnitState, target: UnitState, all_units: Array, dice: Dice, ctx: Dictionary = {}) -> Dictionary:
+	var reports: Array[Dictionary] = []
+	var plan: Array[Dictionary] = shoot_plan(attacker, target, all_units, ctx)
+	var hazardous_used: int = 0
+	if not plan.is_empty():
+		attacker.last_fired_turn = int(ctx.get("turn_no", 0))
+	for entry in plan:
+		if target.is_destroyed():
+			break
+		var w: Weapon = entry["weapon"]
+		reports.append(AttackResolver.resolve(w, target, dice, entry["ctx"]))
 		if w.has("HAZARDOUS"):
 			hazardous_used += 1
-	var hazard: int = 0
-	for i in range(hazardous_used):
-		hazard += AttackResolver.hazard_roll(attacker, dice)
-	return {"reports": reports, "hazard_wounds": hazard}
+	return {"reports": reports, "hazard_wounds": _hazard(attacker, hazardous_used, dice)}
 
 
-## Fight [param target] in melee. All [EXTRA ATTACKS] weapons are used, plus the first other
-## melee weapon (12.05 and 24.11). Only models within engagement range of the target attack.
-static func fight(attacker: UnitState, target: UnitState, dice: Dice, ctx: Dictionary = {}) -> Dictionary:
-	var reports: Array[Dictionary] = []
+## What fighting [param target] would involve. All [EXTRA ATTACKS] weapons are used, plus the
+## first other melee weapon (12.05 and 24.11). Only models within engagement range attack.
+static func fight_plan(attacker: UnitState, target: UnitState, ctx: Dictionary = {}) -> Array[Dictionary]:
+	var plan: Array[Dictionary] = []
 	var fighting: int = 0
 	for m in attacker.models:
 		for n in target.models:
 			if Geo.edge_distance(m["pos"], attacker.base_radius, n["pos"], target.base_radius) <= UnitRules.ENGAGEMENT_RANGE:
 				fighting += 1
 				break
-	var chosen: Array[Weapon] = []
+	if fighting == 0:
+		return plan
 	var main_picked: bool = false
 	for w in attacker.weapons:
 		if not w.is_melee():
 			continue
-		if w.has("EXTRA ATTACKS"):
-			chosen.append(w)
-		elif not main_picked:
-			chosen.append(w)
+		if not w.has("EXTRA ATTACKS"):
+			if main_picked:
+				continue
 			main_picked = true
-	var hazardous_used: int = 0
-	for w in chosen:
-		if fighting == 0 or target.is_destroyed():
-			break
 		var c: Dictionary = ctx.duplicate()
 		c["models_firing"] = fighting
 		c["charged"] = attacker.charged
 		c["single_target"] = true
-		reports.append(AttackResolver.resolve(w, target, dice, c))
+		plan.append({"weapon": w, "ctx": c, "models": fighting})
+	return plan
+
+
+## Fight [param target] in melee. Returns {"reports": Array[Dictionary], "hazard_wounds": int}.
+static func fight(attacker: UnitState, target: UnitState, dice: Dice, ctx: Dictionary = {}) -> Dictionary:
+	var reports: Array[Dictionary] = []
+	var hazardous_used: int = 0
+	for entry in fight_plan(attacker, target, ctx):
+		if target.is_destroyed():
+			break
+		var w: Weapon = entry["weapon"]
+		reports.append(AttackResolver.resolve(w, target, dice, entry["ctx"]))
 		if w.has("HAZARDOUS"):
 			hazardous_used += 1
-	var hazard: int = 0
-	for i in range(hazardous_used):
-		hazard += AttackResolver.hazard_roll(attacker, dice)
-	return {"reports": reports, "hazard_wounds": hazard}
+	return {"reports": reports, "hazard_wounds": _hazard(attacker, hazardous_used, dice)}
+
+
+static func _hazard(attacker: UnitState, count: int, dice: Dice) -> int:
+	var lost: int = 0
+	for i in range(count):
+		lost += AttackResolver.hazard_roll(attacker, dice)
+	return lost

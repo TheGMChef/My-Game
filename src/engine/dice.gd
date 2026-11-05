@@ -89,3 +89,27 @@ static func average(expression: String) -> float:
 	var sides: int = parsed["sides"]
 	var per_die: float = 3.5 if sides == 6 else 2.0
 	return float(parsed["count"]) * per_die + float(parsed["plus"])
+
+
+## Probability of each total for an expression, as {total: probability}. A D3 is a halved D6.
+static func distribution(expression: String) -> Dictionary:
+	var parsed: Dictionary = Dice.parse(expression)
+	var out: Dictionary = {int(parsed["plus"]): 1.0} if int(parsed["count"]) == 0 else {int(parsed["plus"]): 1.0}
+	for i in range(int(parsed["count"])):
+		var next: Dictionary = {}
+		for total in out:
+			for face in range(1, 7):
+				var v: int = face if int(parsed["sides"]) == 6 else (face + 1) >> 1
+				var key: int = int(total) + v
+				next[key] = float(next.get(key, 0.0)) + float(out[total]) / 6.0
+		out = next
+	return out
+
+
+## Average of min(roll, cap): damage that a model with [param cap] wounds can actually lose.
+static func average_capped(expression: String, cap: int) -> float:
+	var total: float = 0.0
+	var dist: Dictionary = Dice.distribution(expression)
+	for v in dist:
+		total += float(mini(int(v), cap)) * float(dist[v])
+	return total

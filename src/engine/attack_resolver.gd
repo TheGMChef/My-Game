@@ -29,10 +29,8 @@ static func wound_threshold(strength: int, toughness: int) -> int:
 	return 5
 
 
-## Number of attack dice for the weapon, including [BLAST], [RAPID FIRE] and [CLEAVE].
-static func gather_attacks(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictionary) -> int:
-	var firing: int = int(ctx.get("models_firing", 1))
-	var total: int = 0
+## Extra attack dice each attacking model gains from [BLAST], [CLEAVE] and [RAPID FIRE].
+static func extra_attacks_each(weapon: Weapon, target: UnitState, ctx: Dictionary) -> int:
 	var extra_each: int = 0
 	var fives: int = target.model_count() / 5
 	var blast: Dictionary = weapon.ability("BLAST", target.keywords)
@@ -44,6 +42,14 @@ static func gather_attacks(weapon: Weapon, target: UnitState, dice: Dice, ctx: D
 	var rapid: Dictionary = weapon.ability("RAPID FIRE", target.keywords)
 	if not rapid.is_empty() and bool(ctx.get("half_range", false)):
 		extra_each += int(rapid["value"])
+	return extra_each
+
+
+## Number of attack dice for the weapon, including [BLAST], [RAPID FIRE] and [CLEAVE].
+static func gather_attacks(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictionary) -> int:
+	var firing: int = int(ctx.get("models_firing", 1))
+	var extra_each: int = extra_attacks_each(weapon, target, ctx)
+	var total: int = 0
 	for i in range(firing):
 		total += dice.roll(weapon.attacks) + extra_each
 	return total
