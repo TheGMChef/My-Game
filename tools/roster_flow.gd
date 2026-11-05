@@ -3,7 +3,9 @@ extends SceneTree
 ## Run: xvfb-run -a godot --path . --resolution 1280x800 --rendering-driver opengl3 -s tools/roster_flow.gd -- <out_dir>
 func _init() -> void:
 	var scene: PackedScene = load("res://scenes/main.tscn")
-	root.add_child(scene.instantiate())
+	var n = scene.instantiate()
+	n.skip_title = true
+	root.add_child(n)
 	_go.call_deferred(OS.get_cmdline_user_args()[0])
 
 func _shot(path: String) -> void:

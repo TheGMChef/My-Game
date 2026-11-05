@@ -8,6 +8,8 @@ extends Control
 
 const HUMAN := 0
 const COMPACT_BELOW := 960.0
+const PHONE_BELOW := 520.0
+const TINY_BELOW := 560.0
 const PHASES: Array[String] = ["command", "movement", "shooting", "charge", "fight"]
 
 var battle: Battle
@@ -28,31 +30,30 @@ var _skip: bool = false
 var _compact: bool = false
 var _info_open: bool = false
 var _game_over_shown: bool = false
-var _log_lines: Array[String] = []
+var _log_lines: Array[Dictionary] = []
 var _begun_key: String = ""
 
 # Nodes
-var _top_title: Label
-var _phase_chips: Array[PanelContainer] = []
-var _phase_labels: Array[Label] = []
-var _score_you: Label
-var _score_ai: Label
-var _bottom_actions: HBoxContainer
-var _next_button: Button
-var _skip_button: Button
-var _side: PanelContainer
-var _orders_title: Label
-var _orders_text: RichTextLabel
-var _unit_text: RichTextLabel
-var _log_text: RichTextLabel
-var _info_button: Button
+var _top_bar: TopBar
+var _phone_hud: PhoneHud
+var _phone_col: PanelContainer
+var _phone_box: VBoxContainer
+var _action_bar: ActionBar
+var _board_col: VBoxContainer
+var _side: SidePanel
 var _settings_panel: PanelContainer
 var _over_panel: PanelContainer
-var _over_text: Label
+var _over_title: Label
+var _over_vp: Array[Label] = []
+var _settings_close: Button
+var _play_again: Button
+var _scrim: ColorRect
 var _zoom_box: VBoxContainer
 var _body: BoxContainer
 var _portrait: bool = false
+var _phone: bool = false
 var skip_roster: bool = false    ## tests and tools set this to go straight to the placeholder battle
+var skip_title: bool = false     ## tools set this to open on the roster
 var _args: Dictionary = {}
 var _armies_in_play: Array = []
 var _roster: RosterScreen
@@ -67,15 +68,25 @@ func _ready() -> void:
 	_apply_scale()
 	if skip_roster or _args.has("quick"):
 		_start_battle(_placeholder_armies())
-	else:
+	elif skip_title:
 		_show_roster()
+	else:
+		_show_title()
 
 
 func _placeholder_armies() -> Array:
 	return JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/armies_placeholder.json"))["armies"]
 
 
-## Army and unit selection comes first; the battle is built once it is confirmed.
+func _show_title() -> void:
+	var title := TitleScreen.new()
+	add_child(title)
+	title.start_pressed.connect(func() -> void:
+		title.queue_free()
+		_show_roster())
+
+
+## Army and unit selection comes before the battle, which is built once it is confirmed.
 func _show_roster() -> void:
 	_roster = RosterScreen.new()
 	add_child(_roster)
@@ -211,113 +222,60 @@ func _build_ui() -> void:
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
 
-	root.add_child(_build_top_bar())
+	_top_bar = TopBar.new()
+	_top_bar.info_pressed.connect(_toggle_info)
+	_top_bar.settings_pressed.connect(func() -> void: _set_settings_visible(true))
+	root.add_child(_top_bar)
 
-	var body := BoxContainer.new()
-	_body = body
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 0)
-	root.add_child(body)
+	_body = BoxContainer.new()
+	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_body.add_theme_constant_override("separation", 0)
+	root.add_child(_body)
 
-	var board_col := VBoxContainer.new()
-	board_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	board_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	board_col.add_theme_constant_override("separation", 0)
-	body.add_child(board_col)
+	_board_col = VBoxContainer.new()
+	_board_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_board_col.add_theme_constant_override("separation", 0)
+	_body.add_child(_board_col)
 
 	var board_holder := Control.new()
 	board_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	board_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	board_col.add_child(board_holder)
+	_board_col.add_child(board_holder)
 	board = BoardView.new()
 	board.set_anchors_preset(Control.PRESET_FULL_RECT)
 	board_holder.add_child(board)
 	_zoom_box = _build_zoom_box()
 	board_holder.add_child(_zoom_box)
 
-	board_col.add_child(_build_bottom_bar())
+	_action_bar = ActionBar.new()
+	_action_bar.next_pressed.connect(_on_next_pressed)
+	_action_bar.skip_pressed.connect(func() -> void: _skip = true)
+	_board_col.add_child(_action_bar)
 
-	_side = _build_side_panel()
-	body.add_child(_side)
+	_phone_col = PanelContainer.new()
+	_phone_col.custom_minimum_size.x = UITokens.PHONE_COLUMN
+	_phone_col.visible = false
+	_body.add_child(_phone_col)
+	_phone_box = VBoxContainer.new()
+	_phone_col.add_child(_phone_box)
+	_phone_hud = PhoneHud.new()
+	_phone_hud.info_pressed.connect(_toggle_info)
+	_phone_hud.settings_pressed.connect(func() -> void: _set_settings_visible(true))
+	_phone_box.add_child(_phone_hud)
 
+	_side = SidePanel.new()
+	_body.add_child(_side)
+
+	_scrim = ColorRect.new()
+	_scrim.color = UITokens.with_alpha(UITokens.VOID, 0.72)
+	_scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_scrim.visible = false
+	add_child(_scrim)
 	_settings_panel = _build_settings_panel()
 	add_child(_settings_panel)
 	_over_panel = _build_over_panel()
 	add_child(_over_panel)
-
-
-func _build_top_bar() -> PanelContainer:
-	var bar := PanelContainer.new()
-	bar.theme_type_variation = "BarPanel"
-	bar.custom_minimum_size.y = UITokens.TOP_BAR
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UITokens.SPACE_4)
-	bar.add_child(row)
-
-	_top_title = Label.new()
-	_top_title.add_theme_font_size_override("font_size", UITokens.TEXT_BODY)
-	_top_title.custom_minimum_size.x = 160
-	row.add_child(_top_title)
-
-	var chips := HBoxContainer.new()
-	chips.add_theme_constant_override("separation", UITokens.SPACE_1)
-	chips.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(chips)
-	for p in PHASES:
-		var chip := PanelContainer.new()
-		var lab := Label.new()
-		lab.text = UIText.t("phase." + p)
-		lab.add_theme_font_size_override("font_size", UITokens.TEXT_SECONDARY)
-		chip.add_child(lab)
-		chips.add_child(chip)
-		_phase_chips.append(chip)
-		_phase_labels.append(lab)
-
-	_score_you = Label.new()
-	_score_ai = Label.new()
-	row.add_child(_score_block(_score_you, 0))
-	row.add_child(_score_block(_score_ai, 1))
-
-	_info_button = _button(UIText.t("button.info"), _toggle_info)
-	row.add_child(_info_button)
-	row.add_child(_button(UIText.t("button.settings"), func() -> void: _set_settings_visible(true)))
-	return bar
-
-
-func _score_block(label: Label, side: int) -> PanelContainer:
-	var box := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = UITokens.RAISED
-	style.border_color = UITokens.SIDE_COLOURS[side]
-	style.border_width_left = 4
-	style.set_corner_radius_all(UITokens.RADIUS)
-	style.content_margin_left = UITokens.SPACE_3
-	style.content_margin_right = UITokens.SPACE_3
-	style.content_margin_top = UITokens.SPACE_1
-	style.content_margin_bottom = UITokens.SPACE_1
-	box.add_theme_stylebox_override("panel", style)
-	label.add_theme_font_size_override("font_size", UITokens.TEXT_SECONDARY)
-	box.add_child(label)
-	return box
-
-
-func _build_bottom_bar() -> PanelContainer:
-	var bar := PanelContainer.new()
-	bar.theme_type_variation = "BarPanel"
-	bar.custom_minimum_size.y = UITokens.BOTTOM_BAR
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UITokens.SPACE_2)
-	bar.add_child(row)
-	_bottom_actions = HBoxContainer.new()
-	_bottom_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_bottom_actions.add_theme_constant_override("separation", UITokens.SPACE_2)
-	row.add_child(_bottom_actions)
-	_skip_button = _button(UIText.t("button.skip"), func() -> void: _skip = true)
-	_skip_button.visible = false
-	row.add_child(_skip_button)
-	_next_button = _button("", _on_next_pressed, true)
-	row.add_child(_next_button)
-	return bar
 
 
 func _build_zoom_box() -> VBoxContainer:
@@ -328,61 +286,15 @@ func _build_zoom_box() -> VBoxContainer:
 	box.offset_right = -UITokens.SPACE_3
 	box.offset_bottom = -UITokens.SPACE_3
 	box.add_theme_constant_override("separation", UITokens.SPACE_1)
-	for spec in [["+", UIText.t("tip.zoom_in"), func() -> void: board.zoom_by(1.25)],
-			["−", UIText.t("tip.zoom_out"), func() -> void: board.zoom_by(0.8)],
-			["⌂", UIText.t("tip.zoom_fit"), func() -> void: board.reset_view()]]:
-		var b := _button(spec[0], spec[2])
+	for spec in [["plus", UIText.t("tip.zoom_in"), func() -> void: board.zoom_by(1.25)],
+			["minus", UIText.t("tip.zoom_out"), func() -> void: board.zoom_by(0.8)],
+			["fit", UIText.t("tip.zoom_fit"), func() -> void: board.reset_view()]]:
+		var b := _button("", spec[2])
+		b.icon = UIIcons.get_icon(spec[0], UITokens.INK, 20)
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.tooltip_text = spec[1]
-		b.custom_minimum_size = Vector2(UITokens.HIT, UITokens.HIT)
 		box.add_child(b)
 	return box
-
-
-func _build_side_panel() -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = UITokens.SIDE_PANEL
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_theme_constant_override("separation", UITokens.SPACE_3)
-	scroll.add_child(col)
-
-	_orders_title = Label.new()
-	_orders_title.add_theme_font_size_override("font_size", UITokens.TEXT_HEADING)
-	_orders_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(_orders_title)
-	_orders_text = _rich()
-	col.add_child(_orders_text)
-	col.add_child(HSeparator.new())
-
-	var unit_title := Label.new()
-	unit_title.text = UIText.t("panel.unit")
-	unit_title.add_theme_font_size_override("font_size", UITokens.TEXT_BODY)
-	col.add_child(unit_title)
-	_unit_text = _rich()
-	col.add_child(_unit_text)
-	col.add_child(HSeparator.new())
-
-	var log_title := Label.new()
-	log_title.text = UIText.t("panel.log")
-	log_title.add_theme_font_size_override("font_size", UITokens.TEXT_BODY)
-	col.add_child(log_title)
-	_log_text = _rich()
-	_log_text.custom_minimum_size.y = 160
-	col.add_child(_log_text)
-	return panel
-
-
-func _rich() -> RichTextLabel:
-	var r := RichTextLabel.new()
-	r.bbcode_enabled = true
-	r.fit_content = true
-	r.scroll_active = false
-	r.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	return r
 
 
 func _button(text: String, handler: Callable, primary: bool = false) -> Button:
@@ -391,23 +303,32 @@ func _button(text: String, handler: Callable, primary: bool = false) -> Button:
 	b.custom_minimum_size = Vector2(UITokens.HIT, UITokens.HIT)
 	if primary:
 		b.theme_type_variation = "PrimaryButton"
+		b.icon = UIIcons.stripe(UITokens.ON_ACTION)
+		b.size_flags_horizontal = Control.SIZE_SHRINK_END
 	b.pressed.connect(handler)
 	return b
 
 
-func _build_settings_panel() -> PanelContainer:
+func _build_dialog(width: float) -> PanelContainer:
 	var p := PanelContainer.new()
+	p.theme_type_variation = "Dialog"
 	p.visible = false
 	p.set_anchors_preset(Control.PRESET_CENTER)
-	p.custom_minimum_size = Vector2(400, 0)
+	p.custom_minimum_size = Vector2(width, 0)
 	p.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	p.grow_vertical = Control.GROW_DIRECTION_BOTH
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", UITokens.SPACE_3)
 	p.add_child(col)
+	return p
+
+
+func _build_settings_panel() -> PanelContainer:
+	var p := _build_dialog(420.0)
+	var col: VBoxContainer = p.get_child(0)
 	var title := Label.new()
 	title.text = UIText.t("settings.title")
-	title.add_theme_font_size_override("font_size", UITokens.TEXT_HEADING)
+	title.theme_type_variation = "LabelHeading"
 	col.add_child(title)
 
 	var size_row := HBoxContainer.new()
@@ -434,7 +355,8 @@ func _build_settings_panel() -> PanelContainer:
 	col.add_child(_check(UIText.t("settings.objectives"), settings.show_objectives, func(on: bool) -> void:
 		settings.show_objectives = on
 		_settings_changed()))
-	col.add_child(_button(UIText.t("button.close"), func() -> void: _set_settings_visible(false), true))
+	_settings_close = _button(UIText.t("button.close"), func() -> void: _set_settings_visible(false), true)
+	col.add_child(_settings_close)
 	return p
 
 
@@ -448,30 +370,39 @@ func _check(text: String, value: bool, handler: Callable) -> CheckBox:
 
 
 func _build_over_panel() -> PanelContainer:
-	var p := PanelContainer.new()
-	p.visible = false
-	p.set_anchors_preset(Control.PRESET_CENTER)
-	p.custom_minimum_size = Vector2(420, 0)
-	p.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	p.grow_vertical = Control.GROW_DIRECTION_BOTH
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", UITokens.SPACE_3)
-	p.add_child(col)
-	var title := Label.new()
-	title.text = UIText.t("over.title")
-	title.add_theme_font_size_override("font_size", UITokens.TEXT_TITLE)
-	col.add_child(title)
-	_over_text = Label.new()
-	_over_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_over_text.add_theme_font_size_override("font_size", UITokens.TEXT_BODY)
-	col.add_child(_over_text)
-	col.add_child(_button(UIText.t("button.play_again"), _restart, true))
+	var p := _build_dialog(460.0)
+	var col: VBoxContainer = p.get_child(0)
+	col.add_child(TopBar.make_wordmark("LabelWordmarkSmall"))
+	_over_title = Label.new()
+	_over_title.theme_type_variation = "LabelTitle"
+	col.add_child(_over_title)
+	var scores := HBoxContainer.new()
+	scores.add_theme_constant_override("separation", UITokens.SPACE_6)
+	col.add_child(scores)
+	for side in range(2):
+		var box := HBoxContainer.new()
+		box.add_child(ShapeMark.new(side, 16.0))
+		var who := Label.new()
+		who.theme_type_variation = "LabelSection"
+		who.uppercase = true
+		who.text = UIText.t("side.you") if side == HUMAN else UIText.t("side.ai")
+		box.add_child(who)
+		var vp := Label.new()
+		vp.theme_type_variation = "LabelReadout"
+		box.add_child(vp)
+		_over_vp.append(vp)
+		scores.add_child(box)
+	_play_again = _button(UIText.t("button.play_again"), _restart, true)
+	col.add_child(_play_again)
 	return p
 
 
 func _set_settings_visible(on: bool) -> void:
 	_settings_panel.visible = on
-	if not on:
+	_scrim.visible = on or _over_panel.visible
+	if on:
+		_settings_close.grab_focus()
+	else:
 		settings.save_to_disk()
 		board.grab_focus()
 
@@ -492,8 +423,9 @@ func _toggle_info() -> void:
 	_apply_scale()
 
 
-## Scale the whole interface with the window and the player's text size, and switch to the
-## compact layout (side panel behind a button) when the logical width is small.
+## Scale the whole interface with the window and the player's text size, then pick a layout:
+## wide (side panel beside the board), portrait (panel under the board), compact (panel behind a
+## button) or phone (everything in a narrow right-hand column, so the board gets the height).
 func _apply_scale() -> void:
 	var win: Window = get_window()
 	# The window is measured in device pixels. Work out the size in CSS/point units first, so a
@@ -512,20 +444,29 @@ func _apply_scale() -> void:
 	var logical_height: float = float(win.size.y) / factor
 	_portrait = logical_height > logical_width * 1.1
 	_compact = logical_width < COMPACT_BELOW
+	_phone = not _portrait and logical_height < PHONE_BELOW
 	if _body == null:
-		return    # still on the roster screen
+		return    # still on the title or roster screen
 	_body.vertical = _portrait
+	_top_bar.visible = not _phone
+	_top_bar.set_density(_compact, logical_width < TINY_BELOW, _compact and not _portrait)
+	_phone_col.visible = _phone
+	_zoom_box.visible = not _phone
+	var wanted_parent: Control = _phone_box if _phone else _board_col
+	if _action_bar.get_parent() != wanted_parent:
+		_action_bar.reparent(wanted_parent)
+	_action_bar.set_phone(_phone)
 	if _portrait:
-		# Portrait tablet: the board on top, the explanation panel docked below it.
-		_info_button.visible = false
+		# Portrait: the board on top, the tabbed panel docked below it.
 		_side.visible = true
 		_side.custom_minimum_size = Vector2(0, logical_height * 0.36)
 		_side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	else:
-		_info_button.visible = _compact
-		_side.visible = (not _compact) or _info_open
+		_side.visible = (not _compact and not _phone) or _info_open
 		_side.size_flags_horizontal = Control.SIZE_FILL
-		_side.custom_minimum_size = Vector2(minf(UITokens.SIDE_PANEL, logical_width * 0.5) if _compact else UITokens.SIDE_PANEL, 0)
+		_side.custom_minimum_size = Vector2(minf(UITokens.SIDE_PANEL, logical_width * 0.5) if (_compact or _phone) else UITokens.SIDE_PANEL, 0)
+	if battle != null:
+		_refresh()
 	board.queue_redraw()
 
 
@@ -865,6 +806,7 @@ func _continue_after_human_action() -> void:
 
 func _restart() -> void:
 	_over_panel.visible = false
+	_scrim.visible = false
 	_load_battle(_armies_in_play, Time.get_ticks_msec() % 100000)
 	board.battle = battle
 	_clear_selection()
@@ -968,7 +910,7 @@ func _has_human_consolidations() -> bool:
 func _set_busy(on: bool) -> void:
 	_busy = on
 	_skip = false
-	_skip_button.visible = on
+	_action_bar.set_busy(on)
 	_refresh()
 
 
@@ -1063,11 +1005,11 @@ func _log_event(e: Dictionary) -> void:
 		"destroyed":
 			line = UIText.t("log.destroyed", [str(_names.get(e["unit"], "?"))])
 		"score":
-			line = UIText.t("log.score", [side_word, int(e["vp"]), int(e["objectives"])])
+			line = UIText.t("log.score_one" if int(e["objectives"]) == 1 else "log.score", [side_word, int(e["vp"]), int(e["objectives"])])
 		"turn_end":
 			line = ""
 	if line != "":
-		_log_lines.append(line)
+		_log_lines.append({"text": line, "side": int(e["side"])})
 		if _log_lines.size() > 60:
 			_log_lines.pop_front()
 
@@ -1093,15 +1035,22 @@ func _show_game_over() -> void:
 	var mine: int = battle.vp[HUMAN]
 	var theirs: int = battle.vp[1 - HUMAN]
 	var key: String = "over.win" if mine > theirs else ("over.lose" if mine < theirs else "over.draw")
-	_over_text.text = UIText.t(key, [mine, theirs])
+	_over_title.text = UIText.t(key)
+	_over_vp[HUMAN].text = str(mine)
+	_over_vp[1 - HUMAN].text = str(theirs)
 	_over_panel.visible = true
+	_scrim.visible = true
+	_play_again.grab_focus()
 
 
 # ---------------------------------------------------------------- refresh
 
 func _refresh() -> void:
-	_refresh_top_bar()
-	_refresh_bottom_bar()
+	var total_rounds: int = int(battle.scenario.get("battle_rounds", 5))
+	var round_no: int = battle.flow.round_no
+	_top_bar.refresh(round_no, total_rounds, battle.active_player() == HUMAN, battle.phase(), battle.flow.command_points, battle.vp)
+	_phone_hud.refresh(round_no, total_rounds, battle.phase(), battle.vp)
+	_refresh_action_bar()
 	_refresh_side_panel()
 	_refresh_board_only()
 	if battle.is_over() and not _busy:
@@ -1142,73 +1091,29 @@ func _acted_units() -> Array:
 
 
 func _mark_highlights() -> void:
-	var good: Color = UITokens.ACCENT
 	match battle.phase():
 		"shooting":
 			for e in battle.living(1 - HUMAN):
 				if not battle.shoot_preview(_selected, e).is_empty():
-					board.highlights[e] = good
+					board.highlights[e] = BoardView.MARK_IN_RANGE
 			if _target != null:
-				board.highlights[_target] = UITokens.TEXT
+				board.highlights[_target] = BoardView.MARK_TARGET
 				board.los_line = [_selected.centre(), _target.centre()]
 				board.los_blocked = battle.shoot_preview(_selected, _target).is_empty()
 		"charge":
 			var cs: Dictionary = battle.charge_state(_selected)
 			for t in cs.get("targets", []):
-				board.highlights[t] = good if not _charge_targets.has(t) else UITokens.TEXT
+				board.highlights[t] = BoardView.MARK_TARGET if _charge_targets.has(t) else BoardView.MARK_IN_RANGE
 		"fight":
 			if battle.fight_stage == "fight":
 				for e in battle.living(1 - HUMAN):
 					if _selected.gap_to(e) <= UnitRules.ENGAGEMENT_RANGE:
-						board.highlights[e] = good if e != _target else UITokens.TEXT
+						board.highlights[e] = BoardView.MARK_TARGET if e == _target else BoardView.MARK_IN_RANGE
 
 
-func _refresh_top_bar() -> void:
-	var round_no: int = battle.flow.round_no
-	var who: String = UIText.t("side.you_turn") if battle.active_player() == HUMAN else UIText.t("side.ai_turn")
-	_top_title.text = UIText.t("hud.round_turn", [round_no, who])
-	var current: int = PHASES.find(battle.phase())
-	for i in range(PHASES.size()):
-		var on: bool = i == current
-		var style := StyleBoxFlat.new()
-		style.bg_color = UITokens.ACCENT_DIM if on else Color(0, 0, 0, 0)
-		style.border_color = UITokens.ACCENT if on else Color(0, 0, 0, 0)
-		style.set_border_width_all(1)
-		style.set_corner_radius_all(UITokens.RADIUS)
-		style.content_margin_left = UITokens.SPACE_2
-		style.content_margin_right = UITokens.SPACE_2
-		style.content_margin_top = UITokens.SPACE_1
-		style.content_margin_bottom = UITokens.SPACE_1
-		_phase_chips[i].add_theme_stylebox_override("panel", style)
-		_phase_labels[i].add_theme_color_override("font_color", UITokens.TEXT if on else UITokens.TEXT_FAINT)
-		_phase_labels[i].visible = (not _compact) or on
-	_score_you.text = UIText.t("hud.score", [UIText.t("side.you"), battle.flow.command_points[HUMAN], battle.vp[HUMAN]])
-	_score_ai.text = UIText.t("hud.score", [UIText.t("side.ai"), battle.flow.command_points[1 - HUMAN], battle.vp[1 - HUMAN]])
-
-
-func _refresh_bottom_bar() -> void:
-	for c in _bottom_actions.get_children():
-		c.queue_free()
-	_next_button.text = _next_label()
-	_next_button.disabled = _busy or battle.is_over() or not (battle.active_player() == HUMAN or _human_can_act_in_ai_turn())
-	if _busy or battle.is_over():
-		return
-	if _selected == null or _selected.owner != HUMAN:
-		var hint := Label.new()
-		hint.text = UIText.t("hint.select_unit")
-		hint.add_theme_color_override("font_color", UITokens.TEXT_DIM)
-		hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_bottom_actions.add_child(hint)
-		return
-	match battle.phase():
-		"movement":
-			_build_movement_actions()
-		"shooting":
-			_build_shooting_actions()
-		"charge":
-			_build_charge_actions()
-		"fight":
-			_build_fight_actions()
+func _refresh_action_bar() -> void:
+	var can_end: bool = battle.active_player() == HUMAN or _human_can_act_in_ai_turn()
+	_action_bar.show_actions(_action_specs(), _next_label(), _busy or battle.is_over() or not can_end)
 
 
 func _next_label() -> String:
@@ -1226,128 +1131,125 @@ func _next_label() -> String:
 	return UIText.t("next." + PHASES[mini(i + 1, PHASES.size() - 1)])
 
 
-func _build_movement_actions() -> void:
+## What the action bar offers right now, as plain specs. See [ActionBar].
+func _action_specs() -> Array[Dictionary]:
+	if _busy or battle.is_over():
+		return []
+	if _selected == null or _selected.owner != HUMAN:
+		if battle.phase() == "fight" and battle.fight_stage == "fight" and battle.fight_finished():
+			return [_hint("hint.fights_done")]
+		return [_hint("hint.select_unit")]
+	match battle.phase():
+		"movement":
+			return _movement_actions()
+		"shooting":
+			return _shooting_actions()
+		"charge":
+			return _charge_actions()
+		"fight":
+			return _fight_actions()
+	return []
+
+
+func _hint(key: String) -> Dictionary:
+	return {"hint": UIText.t(key)}
+
+
+func _act(key: String, handler: Callable) -> Dictionary:
+	return {"text": UIText.t(key), "handler": handler, "role": "normal"}
+
+
+func _main(key: String, handler: Callable, disabled: bool) -> Dictionary:
+	return {"text": UIText.t(key), "handler": handler, "role": "main", "disabled": disabled}
+
+
+func _no_valid_move() -> bool:
+	return not bool(_verdict.get("ok", false)) or _delta.length() < 0.01
+
+
+func _mode(key: String, mode: String) -> Dictionary:
+	return {"text": UIText.t(key), "handler": func() -> void: _set_mode(mode), "role": "option", "pressed": _move_mode == mode}
+
+
+func _movement_actions() -> Array[Dictionary]:
 	if battle.has_moved(_selected):
-		_bottom_actions.add_child(_dim_label(UIText.t("hint.already_moved")))
-		return
-	var engaged: bool = UnitRules.engaged(_selected, battle.units)
-	if engaged:
-		_bottom_actions.add_child(_mode_button(UIText.t("mode.fall_back"), "fall_back"))
+		return [_hint("hint.already_moved")]
+	var out: Array[Dictionary] = []
+	if UnitRules.engaged(_selected, battle.units):
+		out.append(_mode("mode.fall_back", "fall_back"))
 	else:
-		_bottom_actions.add_child(_mode_button(UIText.t("mode.normal"), "normal"))
-		_bottom_actions.add_child(_mode_button(UIText.t("mode.advance"), "advance"))
-	_bottom_actions.add_child(_button(UIText.t("button.hold"), _on_hold_pressed))
-	var confirm: Button = _button(UIText.t("button.confirm_move"), _on_confirm_pressed, true)
-	confirm.disabled = not bool(_verdict.get("ok", false)) or _delta.length() < 0.01
-	_bottom_actions.add_child(confirm)
-	_bottom_actions.add_child(_button(UIText.t("button.cancel"), _on_cancel_pressed))
+		out.append(_mode("mode.normal", "normal"))
+		out.append(_mode("mode.advance", "advance"))
+	out.append(_act("button.hold", _on_hold_pressed))
+	out.append(_act("button.cancel", _on_cancel_pressed))
+	out.append(_main("button.confirm_move", _on_confirm_pressed, _no_valid_move()))
+	return out
 
 
-func _mode_button(text: String, mode: String) -> Button:
-	var b := _button(text, func() -> void: _set_mode(mode))
-	b.toggle_mode = true
-	b.button_pressed = _move_mode == mode
-	return b
-
-
-func _build_shooting_actions() -> void:
+func _shooting_actions() -> Array[Dictionary]:
 	if battle.has_shot(_selected):
-		_bottom_actions.add_child(_dim_label(UIText.t("hint.already_shot")))
-		return
+		return [_hint("hint.already_shot")]
 	if _target == null:
-		_bottom_actions.add_child(_dim_label(UIText.t("hint.pick_target")))
-		return
-	var fire: Button = _button(UIText.t("button.fire"), _on_fire_pressed, true)
-	fire.disabled = battle.shoot_preview(_selected, _target).is_empty()
-	_bottom_actions.add_child(fire)
-	_bottom_actions.add_child(_button(UIText.t("button.cancel"), _on_cancel_pressed))
+		return [_hint("hint.pick_target")]
+	return [_act("button.cancel", _on_cancel_pressed),
+		_main("button.fire", _on_fire_pressed, battle.shoot_preview(_selected, _target).is_empty())]
 
 
-func _build_charge_actions() -> void:
+func _charge_actions() -> Array[Dictionary]:
 	var cs: Dictionary = battle.charge_state(_selected)
 	if cs.is_empty():
-		var declare: Button = _button(UIText.t("button.declare_charge"), _on_declare_pressed, true)
-		declare.disabled = not ChargeRules.eligible(_selected, battle.units)["ok"]
-		_bottom_actions.add_child(declare)
-		return
+		return [_main("button.declare_charge", _on_declare_pressed, not ChargeRules.eligible(_selected, battle.units)["ok"])]
 	if battle.charge_finished(_selected):
-		_bottom_actions.add_child(_dim_label(UIText.t("hint.charge_done")))
-		return
-	_bottom_actions.add_child(_button(UIText.t("button.suggest"), _on_suggest_pressed))
-	var confirm: Button = _button(UIText.t("button.confirm_charge"), _on_confirm_pressed, true)
-	confirm.disabled = not bool(_verdict.get("ok", false)) or _delta.length() < 0.01
-	_bottom_actions.add_child(confirm)
-	_bottom_actions.add_child(_button(UIText.t("button.give_up"), _on_give_up_pressed))
+		return [_hint("hint.charge_done")]
+	return [_act("button.suggest", _on_suggest_pressed), _act("button.give_up", _on_give_up_pressed),
+		_main("button.confirm_charge", _on_confirm_pressed, _no_valid_move())]
 
 
-func _build_fight_actions() -> void:
+func _fight_actions() -> Array[Dictionary]:
 	match battle.fight_stage:
 		"pile_in":
 			if not battle.can_pile_in(_selected):
-				_bottom_actions.add_child(_dim_label(UIText.t("hint.no_pile_in")))
-				return
-			_bottom_actions.add_child(_button(UIText.t("button.suggest"), _on_suggest_pressed))
-			var c: Button = _button(UIText.t("button.confirm_pile_in"), _on_confirm_pressed, true)
-			c.disabled = not bool(_verdict.get("ok", false)) or _delta.length() < 0.01
-			_bottom_actions.add_child(c)
+				return [_hint("hint.no_pile_in")]
+			return [_act("button.suggest", _on_suggest_pressed),
+				_main("button.confirm_pile_in", _on_confirm_pressed, _no_valid_move())]
 		"fight":
 			if battle.fight_chooser() != HUMAN:
-				_bottom_actions.add_child(_dim_label(UIText.t("hint.opponent_picks")))
-				return
+				return [_hint("hint.opponent_picks")]
 			if not battle.fight_options().has(_selected):
-				_bottom_actions.add_child(_dim_label(UIText.t("hint.cannot_pick_yet")))
-				return
+				return [_hint("hint.cannot_pick_yet")]
 			if _target == null:
-				_bottom_actions.add_child(_dim_label(UIText.t("hint.pick_fight_target")))
-				_bottom_actions.add_child(_button(UIText.t("button.skip_fight"), _on_skip_fight_pressed))
-				return
-			var f: Button = _button(UIText.t("button.fight"), _on_fight_pressed, true)
-			f.disabled = battle.fight_preview(_selected, _target).is_empty()
-			_bottom_actions.add_child(f)
+				return [_hint("hint.pick_fight_target"), _act("button.skip_fight", _on_skip_fight_pressed)]
+			return [_main("button.fight", _on_fight_pressed, battle.fight_preview(_selected, _target).is_empty())]
 		"consolidate":
 			if not battle.can_consolidate(_selected):
-				_bottom_actions.add_child(_dim_label(UIText.t("hint.no_consolidate")))
-				return
-			_bottom_actions.add_child(_button(UIText.t("button.suggest"), _on_suggest_pressed))
-			var cc: Button = _button(UIText.t("button.confirm_consolidate"), _on_confirm_pressed, true)
-			cc.disabled = not bool(_verdict.get("ok", false)) or _delta.length() < 0.01
-			_bottom_actions.add_child(cc)
+				return [_hint("hint.no_consolidate")]
+			return [_act("button.suggest", _on_suggest_pressed),
+				_main("button.confirm_consolidate", _on_confirm_pressed, _no_valid_move())]
+	return []
 
 
-func _dim_label(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_color_override("font_color", UITokens.TEXT_DIM)
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	return l
-
-
-# ---------------------------------------------------------------- side panel text
+# ---------------------------------------------------------------- side panel data
 
 func _refresh_side_panel() -> void:
 	var phase: String = battle.phase()
 	var key: String = phase if phase != "fight" else "fight_" + battle.fight_stage
-	_orders_title.text = UIText.t("help.title." + key)
-	var text: String = UIText.t("help.body." + key)
+	var odds: Dictionary = _odds_view()
+	var body: String = "" if not odds.is_empty() else UIText.t("help.body." + key)
 	if _busy:
-		text = UIText.t("help.ai_playing")
-	var extra: String = _orders_detail()
-	if extra != "":
-		text += "\n\n" + extra
-	_orders_text.text = text
-	_unit_text.text = _unit_card(_selected) if _selected != null else "[color=#a3acb9]" + UIText.t("hint.no_unit") + "[/color]"
-	_log_text.text = "\n".join(_log_lines.slice(maxi(0, _log_lines.size() - 14)))
+		body = UIText.t("help.ai_playing")
+	_side.show_orders(UIText.t("help.title." + key), body, _orders_detail())
+	_side.show_odds(odds)
+	_side.show_unit(_unit_view(_selected) if _selected != null else {})
+	_side.show_log(_log_lines)
 
 
 func _orders_detail() -> String:
 	var out: String = ""
 	if not _verdict.is_empty() and _delta.length() >= 0.01 or (not _verdict.is_empty() and not _verdict.get("ok", true)):
 		if bool(_verdict.get("ok", false)):
-			out += "[color=%s]%s[/color]" % [UITokens.legal(settings.colour_blind).to_html(false), UIText.t("verdict.legal")]
+			out += "[color=#%s]%s[/color]" % [UITokens.legal(settings.colour_blind).to_html(false), UIText.t("verdict.legal")]
 		else:
-			out += "[color=%s]%s[/color] %s" % [UITokens.illegal(settings.colour_blind).to_html(false), UIText.t("verdict.illegal"), str(_verdict.get("reason", ""))]
+			out += "[color=#%s]%s[/color] %s" % [UITokens.illegal(settings.colour_blind).to_html(false), UIText.t("verdict.illegal"), str(_verdict.get("reason", ""))]
 	if _selected != null and _selected.owner == HUMAN:
 		match battle.phase():
 			"movement":
@@ -1355,76 +1257,94 @@ func _orders_detail() -> String:
 					out += ("\n" if out != "" else "") + UIText.t("detail.move_range", [_allowed_distance(_selected)])
 					if _move_mode == "advance" and battle.advance_roll_for(_selected) > 0:
 						out += "\n" + UIText.t("detail.advance_roll", [battle.advance_roll_for(_selected)])
-			"shooting":
-				if _target != null:
-					out += ("\n" if out != "" else "") + _odds_table(battle.shoot_preview(_selected, _target), _target)
 			"charge":
 				var cs: Dictionary = battle.charge_state(_selected)
 				if cs.has("roll"):
 					out += ("\n" if out != "" else "") + UIText.t("detail.charge_roll", [int(cs["roll"]), (cs["targets"] as Array).size()])
-			"fight":
-				if _target != null and battle.fight_stage == "fight":
-					out += ("\n" if out != "" else "") + _odds_table(battle.fight_preview(_selected, _target), _target)
 	return out
 
 
-func _odds_table(preview: Array[Dictionary], target: UnitState) -> String:
+## The numbers for the odds card, or an empty dictionary when no attack is being lined up.
+func _odds_view() -> Dictionary:
+	if _selected == null or _selected.owner != HUMAN or _target == null:
+		return {}
+	var preview: Array[Dictionary] = []
+	if battle.phase() == "shooting":
+		preview = battle.shoot_preview(_selected, _target)
+	elif battle.phase() == "fight" and battle.fight_stage == "fight":
+		preview = battle.fight_preview(_selected, _target)
+	else:
+		return {}
 	if preview.is_empty():
-		return UIText.t("odds.none")
-	var out: String = "[b]%s[/b] %s\n" % [UIText.t("odds.against"), target.unit_name]
+		return {"none": UIText.t("odds.none")}
 	var total: float = 0.0
+	var lost: float = 0.0
+	var rows: Array = []
 	for p in preview:
 		var o: Dictionary = p["odds"]
 		var w: Weapon = p["weapon"]
-		var hit: String = UIText.t("odds.auto_hit") if bool(o["auto_hit"]) else UIText.t("odds.target", [int(o["hit_target"])])
-		var save: String = _save_text(target, w)
-		out += "[color=#e6e9ef]%s[/color] · %s\n" % [w.weapon_name, UIText.t("odds.models", [int(p["models"])])]
-		out += "  %s  %s\n" % [UIText.t("odds.attacks", [o["attacks"]]), UIText.t("odds.hit", [hit])]
-		out += "  %s  %s\n" % [UIText.t("odds.wound", [int(o["wound_target"])]), save]
-		out += "  %s\n" % UIText.t("odds.expected", [o["expected_damage"], o["expected_models_destroyed"]])
 		total += float(o["expected_damage"])
-	if preview.size() > 1:
-		out += UIText.t("odds.total", [total])
-	return out
+		lost += float(o["expected_models_destroyed"])
+		var hit: String = UIText.t("odds.auto") if bool(o["auto_hit"]) else UIText.t("odds.target", [int(o["hit_target"])])
+		rows.append({"title": w.weapon_name if preview.size() > 1 else "",
+			"tiles": [[UIText.t("odds.tile_attacks"), _number(float(o["attacks"]))], [UIText.t("odds.tile_hit"), hit],
+				[UIText.t("odds.tile_wound"), UIText.t("odds.target", [int(o["wound_target"])])],
+				[UIText.t("odds.tile_save"), _save_text(_target, w)]],
+			"note": UIText.t("odds.firing", [int(p["models"]), _selected.model_count()]) + _ability_note(w)})
+	var heading: String = _target.unit_name if preview.size() > 1 else UIText.t("odds.heading", [(preview[0]["weapon"] as Weapon).weapon_name, _target.unit_name])
+	return {"heading": heading, "total": total, "lost": lost, "fraction": total / float(maxi(1, _target.total_wounds_left())), "rows": rows}
+
+
+func _number(v: float) -> String:
+	return "%d" % int(v) if is_equal_approx(v, roundf(v)) else "%.1f" % v
 
 
 func _save_text(target: UnitState, w: Weapon) -> String:
 	var modified: int = target.save - w.ap
-	var best: String = UIText.t("odds.save", [clampi(modified, 2, 7)]) if modified <= 6 else UIText.t("odds.no_save")
+	var best: String = UIText.t("odds.target", [clampi(modified, 2, 7)]) if modified <= 6 else UIText.t("odds.no_save")
 	if target.invuln > 0 and (modified > target.invuln or modified > 6):
 		return UIText.t("odds.invuln", [target.invuln])
 	return best
 
 
-func _unit_card(u: UnitState) -> String:
-	var side: String = UIText.t("side.you") if u.owner == HUMAN else UIText.t("side.ai")
-	var out: String = "[color=%s]%s[/color]  %s\n" % [UITokens.SIDE_COLOURS[u.owner].to_html(false), u.unit_name, side]
-	out += "[color=#a3acb9]M[/color] %d\"  [color=#a3acb9]T[/color] %d  [color=#a3acb9]Sv[/color] %d+  [color=#a3acb9]W[/color] %d  [color=#a3acb9]Ld[/color] %d+  [color=#a3acb9]OC[/color] %d\n" % [
-			int(u.move), u.toughness, u.save, u.wounds_per_model, u.leadership, u.objective_control]
-	var extras: Array[String] = []
-	if u.invuln > 0:
-		extras.append(UIText.t("card.invuln", [u.invuln]))
-	if u.fnp > 0:
-		extras.append(UIText.t("card.fnp", [u.fnp]))
-	if u.battle_shocked:
-		extras.append(UIText.t("chip.shocked"))
-	if not extras.is_empty():
-		out += ", ".join(extras) + "\n"
-	out += UIText.t("card.models", [u.model_count(), u.starting_strength]) + "\n"
-	for w in u.weapons:
-		out += "[color=#a3acb9]•[/color] %s: %s\n" % [w.weapon_name, _weapon_line(w)]
-	return out
+func _ability_note(w: Weapon) -> String:
+	var names: Array[String] = _ability_names(w)
+	return "" if names.is_empty() else " " + ", ".join(names) + "."
 
 
-func _weapon_line(w: Weapon) -> String:
-	var rng: String = UIText.t("card.melee") if w.is_melee() else "%d\"" % int(w.range_in)
-	var line: String = UIText.t("card.weapon", [rng, w.attacks, w.skill, w.strength, -w.ap, w.damage])
+func _ability_names(w: Weapon) -> Array[String]:
 	var names: Array[String] = []
 	for a in w.abilities:
 		var n: String = str(a["name"]).capitalize()
 		if int(a["value"]) > 0:
 			n += " %d" % int(a["value"])
 		names.append(n)
+	return names
+
+
+func _unit_view(u: UnitState) -> Dictionary:
+	var extras: Array = []
+	if u.invuln > 0:
+		extras.append(UIText.t("card.invuln", [u.invuln]))
+	if u.fnp > 0:
+		extras.append(UIText.t("card.fnp", [u.fnp]))
+	if u.battle_shocked:
+		extras.append(UIText.t("chip.shocked"))
+	var weapons: Array = []
+	for w in u.weapons:
+		weapons.append([w.weapon_name, _weapon_line(w)])
+	return {"side": u.owner, "name": u.unit_name,
+		"note": UIText.t("card.models", [u.model_count(), u.starting_strength]),
+		"tiles": [[UIText.t("stat.move"), "%d\"" % int(u.move)], [UIText.t("stat.toughness"), str(u.toughness)],
+			[UIText.t("stat.save"), UIText.t("odds.target", [u.save])], [UIText.t("stat.wounds"), str(u.wounds_per_model)],
+			[UIText.t("stat.leadership"), UIText.t("odds.target", [u.leadership])], [UIText.t("stat.oc"), str(u.objective_control)]],
+		"extras": extras, "weapons": weapons}
+
+
+func _weapon_line(w: Weapon) -> String:
+	var rng: String = UIText.t("card.melee") if w.is_melee() else "%d\"" % int(w.range_in)
+	var line: String = UIText.t("card.weapon", [rng, w.attacks, w.skill, w.strength, -w.ap, w.damage])
+	var names: Array[String] = _ability_names(w)
 	if not names.is_empty():
 		line += " · " + ", ".join(names)
 	return line

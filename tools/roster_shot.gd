@@ -3,6 +3,7 @@ func _init() -> void:
 	var a := OS.get_cmdline_user_args()
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	var n = scene.instantiate()
+	n.skip_title = true
 	root.add_child(n)
 	_go.call_deferred(a[0])
 func _go(path: String) -> void:

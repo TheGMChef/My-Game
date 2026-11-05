@@ -1,14 +1,18 @@
-# My-Game
+# Muster
 
-A small tabletop battle simulator with AI opponents. Personal use and testing only; not for release or sharing.
+Muster is a small tabletop battle simulator with AI opponents. Personal use and testing only; not for release or sharing.
 
 ## Overview
 
 A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 with GDScript. Web export comes first, then tablet, then mobile.
 
+## Interface
+
+The look is "cold board, hot actions": blue-black neutrals, one yellow action colour, and sides told apart by shape as well as colour. Colours, type and spacing live in `src/ui/ui_tokens.gd`, and `src/ui/ui_theme_builder.gd` turns them into the Godot theme. Fonts are Chakra Petch, IBM Plex Sans and IBM Plex Mono, under the Open Font License in `assets/fonts/`.
+
 ## Status
 
-- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (231 tests passing headless).
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (249 tests passing headless).
   Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
   sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, terrain (cover, hidden, obscuring, solid), unit-level shooting and melee, a battle orchestrator with a simple AI, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.

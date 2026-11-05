@@ -1,6 +1,6 @@
 # Project handoff (for Claude Code)
 
-Personal-use 40k battle simulator. Repo: TheGMChef/My-Game, branch `main`. Not for release or sharing.
+Muster: personal-use 40k battle simulator. Repo: TheGMChef/My-Game, branch `main`. Not for release or sharing.
 The owner has supplied official datasheets and rules PDFs and approved using them for development: converting them, running and testing the game with them, and reading them for rules work.
 They stay out of git (`data/local/`, gitignored) because the GitHub repo is public. If the owner wants them committed, make the repo private first, then ask for explicit confirmation.
 
@@ -19,10 +19,10 @@ They stay out of git (`data/local/`, gitignored) because the GitHub repo is publ
 
 ## Architecture
 - `src/engine/`: rules and state, no UI. `battle.gd` (Battle.cmd_* commands, plain-data events), `unit_state.gd`, `weapon.gd`, `weapon_ability.gd`, `attack_resolver.gd`, `simple_ai.gd` (AI uses the same command API), `army_loader.gd` (finds and prepares army JSON).
-- `src/ui/`: `game_root.gd` (HUD and phase handlers), `board_view.gd` (camera, drawing, touch), `roster_screen.gd` (army and unit picker), `ui_text.gd` plus `assets/data/strings_en.json` (all user text; a test scans for missing keys), `ui_tokens.gd`, `ui_theme_builder.gd`.
+- `src/ui/`: `game_root.gd` (controller and phase handlers), `top_bar.gd`, `phone_hud.gd`, `action_bar.gd`, `side_panel.gd` (display only, fed plain data), `board_view.gd` (camera, drawing, touch), `plate_layout.gd` (unit plate placement), `title_screen.gd`, `roster_screen.gd` (army and unit picker), `ui_icons.gd` (vector icons, never font glyphs), `ui_text.gd` plus `assets/data/strings_en.json` (all user text; a test scans for missing keys), `ui_tokens.gd`, `ui_theme_builder.gd`.
 - UI never owns game state. It calls `Battle.cmd_*` and reads events.
 - Data: `assets/data/` holds scenario and invented placeholder armies. Army files: `res://data/local/army_*.json` (gitignored, excluded from export), `user://armies/*.json`, `--armies <path>`, or the Load button.
-- Tools: `tools/datasheets/parse_datasheets.py` (PDF to raw JSON via `pdftotext -layout`), `map_datasheets.py` (raw to engine format plus a report of every judgement call), `ui_tour.gd` (screenshot tour, sets `skip_roster`), `roster_flow.gd`, `roster_shot.gd`, `sim_battle.gd` (AI vs AI).
+- Tools: `tools/datasheets/parse_datasheets.py` (PDF to raw JSON via `pdftotext -layout`), `map_datasheets.py` (raw to engine format plus a report of every judgement call), `ui_tour.gd` (screenshot tour, sets `skip_roster`), `ui_shots.gd` (title, roster, settings and tabs; pass `a11y` for large text and colour-blind), `roster_flow.gd`, `roster_shot.gd`, `sim_battle.gd` (AI vs AI).
 - Scale: sizing by CSS points (`win.size / screen_scale`), base = clamp(min(w/1280, h/800), 1, 2). Touch events with `DEVICE_ID_EMULATION` are ignored in `BoardView`.
 
 ## Running

@@ -14,7 +14,7 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 > **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
 > dedicated sub-specialists. Use the set matching your engine.
 
-> **Project notes**: 2D top-down tabletop battle sim. Web export first (Compatibility
+> **Project notes**: Muster, a 2D top-down tabletop battle sim. Web export first (Compatibility
 > renderer), then tablet, then mobile. Personal use and testing only; not for
 > release or sharing. Do not paste Games Workshop rules text or datasheets into
 > the repo: users load their own data as JSON. `prototypes/ts-battle-sim/` holds

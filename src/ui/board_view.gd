@@ -15,7 +15,17 @@ signal view_changed
 const MIN_TAP_RADIUS := 28.0
 const DRAG_START_PX := 10.0
 
-const LABEL_MIN_PPI: float = 11.0
+const LABEL_MIN_PPI: float = 9.0
+const RAIL_MIN_PPI: float = 11.0
+const GRID_STEP: float = 6.0
+const PLATE_NAME_MAX := 22
+const PLATE_GAP := 8.0
+const BOARD_MARGIN := 24.0
+const BOARD_MARGIN_NO_RAILS := 6.0
+
+## How a unit is marked for the current order. Set per unit in [member highlights].
+const MARK_IN_RANGE := "in_range"
+const MARK_TARGET := "target"
 
 var battle: Battle
 var settings: UISettings = UISettings.new()
@@ -26,7 +36,7 @@ var ghost: Array[Vector2] = []
 var ghost_ok: bool = true
 var ring_centre: Vector2 = Vector2.ZERO
 var ring_radius: float = 0.0
-var highlights: Dictionary = {}          # UnitState -> Color
+var highlights: Dictionary = {}          # UnitState -> MARK_IN_RANGE or MARK_TARGET
 var los_line: Array[Vector2] = []
 var los_blocked: bool = false
 var anim_positions: Dictionary = {}      # unit id -> Array[Vector2]
@@ -44,19 +54,14 @@ var _touches: Dictionary = {}              # finger index -> position
 var _pinch_dist: float = 0.0
 var _pinch_mid: Vector2 = Vector2.ZERO
 var _fx: Array[Dictionary] = []
-var _badge_box := StyleBoxFlat.new()
+var _plate_box: StyleBoxFlat = UIThemeBuilder.notch(UITokens.HULL, UITokens.EDGE, UITokens.NOTCH_SM / 2, 0)
+var _plate_font: Font = UIThemeBuilder.spaced(UITokens.FONT_DISPLAY)
 
 
 func _ready() -> void:
 	clip_contents = true
 	focus_mode = Control.FOCUS_ALL
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	_badge_box.set_corner_radius_all(UITokens.SPACE_1 * 2)
-	_badge_box.set_border_width_all(1)
-	_badge_box.content_margin_left = UITokens.SPACE_2
-	_badge_box.content_margin_right = UITokens.SPACE_2
-	_badge_box.content_margin_top = UITokens.SPACE_1
-	_badge_box.content_margin_bottom = UITokens.SPACE_1
 	resized.connect(queue_redraw)
 
 
@@ -65,10 +70,14 @@ func _ready() -> void:
 func pixels_per_inch() -> float:
 	if battle == null:
 		return 1.0
-	var margin: float = float(UITokens.SPACE_4)
-	var fit_x: float = (size.x - margin * 2.0) / battle.board.size.x
-	var fit_y: float = (size.y - margin * 2.0) / battle.board.size.y
-	return maxf(1.0, minf(fit_x, fit_y)) * _zoom
+	var fit: float = _fit_scale(BOARD_MARGIN)
+	if fit < RAIL_MIN_PPI:
+		fit = _fit_scale(BOARD_MARGIN_NO_RAILS)    # no edge labels to make room for
+	return maxf(1.0, fit) * _zoom
+
+
+func _fit_scale(margin: float) -> float:
+	return minf((size.x - margin * 2.0) / battle.board.size.x, (size.y - margin * 2.0) / battle.board.size.y)
 
 
 func _origin() -> Vector2:
@@ -292,49 +301,67 @@ func _positions_of(u: UnitState) -> Array[Vector2]:
 func _draw() -> void:
 	if battle == null:
 		return
-	draw_rect(Rect2(Vector2.ZERO, size), UITokens.CANVAS)
+	draw_rect(Rect2(Vector2.ZERO, size), UITokens.VOID)
 	var ppi: float = pixels_per_inch()
 	var board_rect := Rect2(_origin(), battle.board.size * ppi)
 	draw_rect(board_rect, UITokens.BOARD_FLOOR)
-	_draw_grid(board_rect, ppi)
 	_draw_zones(ppi)
+	_draw_grid(board_rect, ppi)
+	_draw_rails(board_rect, ppi)
 	_draw_terrain(ppi)
 	if settings.show_objectives:
 		_draw_objectives(ppi)
 	if settings.show_coherency:
 		_draw_coherency(ppi)
-	draw_rect(board_rect, UITokens.BORDER_STRONG, false, 2.0)
+	draw_rect(board_rect, UITokens.EDGE_STRONG, false, 1.5)
 	if settings.show_engagement:
 		_draw_engagement(ppi)
 	if ring_radius > 0.0:
-		_dashed_circle(world_to_screen(ring_centre), ring_radius * ppi, UITokens.with_alpha(UITokens.ACCENT, 0.8), 2.0)
+		draw_arc(world_to_screen(ring_centre), ring_radius * ppi, 0.0, TAU, 96, UITokens.with_alpha(UITokens.ACTION, 0.8), 2.0, true)
+	if los_line.size() == 2:
+		var c: Color = UITokens.illegal(settings.colour_blind) if los_blocked else UITokens.INK
+		draw_dashed_line(world_to_screen(los_line[0]), world_to_screen(los_line[1]), c, 2.0, 6.0)
 	for u in battle.units:
 		_draw_unit(u, ppi)
 	_draw_ghost(ppi)
-	if los_line.size() == 2:
-		var c: Color = UITokens.illegal(settings.colour_blind) if los_blocked else UITokens.legal(settings.colour_blind)
-		draw_dashed_line(world_to_screen(los_line[0]), world_to_screen(los_line[1]), c, 2.0, 8.0)
 	for f in _fx:
 		var t: float = clampf(float(f["age"]) / float(f["life"]), 0.0, 1.0)
 		var col: Color = f["colour"]
 		draw_line(world_to_screen(f["from"]), world_to_screen(f["to"]), UITokens.with_alpha(col, 1.0 - t * 0.7), 4.0)
-	for u in battle.units:
-		if ppi >= LABEL_MIN_PPI or u == selected:
-			_draw_badge(u, ppi)
+	_draw_plates(ppi, board_rect)
 
 
 func _draw_grid(board_rect: Rect2, ppi: float) -> void:
-	var step: float = 6.0
-	var x: float = step
+	var x: float = GRID_STEP
 	while x < battle.board.size.x:
 		var sx: float = board_rect.position.x + x * ppi
-		draw_line(Vector2(sx, board_rect.position.y), Vector2(sx, board_rect.end.y), UITokens.GRID, 1.0)
-		x += step
-	var y: float = step
+		draw_line(Vector2(sx, board_rect.position.y), Vector2(sx, board_rect.end.y), UITokens.BOARD_GRID, 1.0)
+		x += GRID_STEP
+	var y: float = GRID_STEP
 	while y < battle.board.size.y:
 		var sy: float = board_rect.position.y + y * ppi
-		draw_line(Vector2(board_rect.position.x, sy), Vector2(board_rect.end.x, sy), UITokens.GRID, 1.0)
-		y += step
+		draw_line(Vector2(board_rect.position.x, sy), Vector2(board_rect.end.x, sy), UITokens.BOARD_GRID, 1.0)
+		y += GRID_STEP
+
+
+## Letters along the top and numbers down the side, one for each 6-inch square.
+func _draw_rails(board_rect: Rect2, ppi: float) -> void:
+	if ppi < RAIL_MIN_PPI:
+		return
+	var font: Font = UITokens.FONT_MONO
+	var size_px: int = UITokens.TEXT_META
+	var i: int = 0
+	while float(i + 1) * GRID_STEP <= battle.board.size.x:
+		var text: String = "ABCDEFGHIJKL"[i]
+		var w: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x
+		var cx: float = board_rect.position.x + (float(i) + 0.5) * GRID_STEP * ppi
+		draw_string(font, Vector2(cx - w * 0.5, board_rect.position.y - 6.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px, UITokens.INK_FAINT)
+		i += 1
+	i = 0
+	while float(i + 1) * GRID_STEP <= battle.board.size.y:
+		var cy: float = board_rect.position.y + (float(i) + 0.5) * GRID_STEP * ppi
+		draw_string(font, Vector2(board_rect.position.x - 14.0, cy + 4.0), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, size_px, UITokens.INK_FAINT)
+		i += 1
 
 
 func _draw_zones(ppi: float) -> void:
@@ -345,34 +372,33 @@ func _draw_zones(ppi: float) -> void:
 		draw_rect(rect, UITokens.ZONE_TINT[side])
 
 
+## Dense terrain is solid, light terrain is half filled and exposed terrain is a thin outline.
 func _draw_terrain(ppi: float) -> void:
 	for area in battle.terrain:
 		var arect := Rect2(world_to_screen(area.rect.position), area.rect.size * ppi)
-		_dashed_rect(arect, UITokens.BORDER_STRONG)
+		draw_rect(arect, UITokens.EDGE, false, 1.0)
 		for f in area.features:
 			var frect := Rect2(world_to_screen(f["rect"].position), f["rect"].size * ppi)
 			match str(f["category"]):
 				"dense":
-					draw_rect(frect, UITokens.TERRAIN_DENSE)
-					_hatch(frect, UITokens.with_alpha(UITokens.TEXT_FAINT, 0.55), 10.0)
-					draw_rect(frect, UITokens.TEXT_FAINT, false, 2.0)
+					_notched_rect(frect, UITokens.TERRAIN_FILL, UITokens.TERRAIN_EDGE, 2.0)
 				"light":
-					draw_rect(frect, UITokens.TERRAIN_LIGHT)
-					_dots(frect, UITokens.with_alpha(UITokens.TEXT_FAINT, 0.6), 14.0)
-					draw_rect(frect, UITokens.BORDER_STRONG, false, 1.0)
+					_notched_rect(frect, UITokens.with_alpha(UITokens.TERRAIN_FILL, 0.55), UITokens.TERRAIN_EDGE, 1.5)
 				_:
-					draw_rect(frect, UITokens.TERRAIN_EXPOSED)
-					_dashed_rect(frect, UITokens.BORDER_STRONG)
+					_notched_rect(frect, UITokens.with_alpha(UITokens.TERRAIN_FILL, 0.25), UITokens.EDGE_STRONG, 1.0)
 
 
 func _draw_objectives(ppi: float) -> void:
 	for o in battle.objectives:
 		var c: Vector2 = world_to_screen(o)
 		var who: int = Missions.controller(o, battle.units, battle.objective_range)
-		var col: Color = UITokens.TEXT_FAINT if who < 0 else UITokens.SIDE_COLOURS[who]
-		_dashed_circle(c, battle.objective_range * ppi, UITokens.with_alpha(col, 0.7), 1.5)
-		draw_circle(c, 6.0, col)
-		draw_arc(c, 10.0, 0.0, TAU, 24, UITokens.with_alpha(col, 0.9), 2.0)
+		var col: Color = UITokens.RELAY if who < 0 else UITokens.SIDE_COLOURS[who]
+		var reach: float = battle.objective_range * ppi
+		draw_circle(c, reach, UITokens.with_alpha(col, 0.1))
+		draw_arc(c, reach, 0.0, TAU, 64, col, 1.5, true)
+		_diamond(c, 11.0, UITokens.BOARD_FLOOR)
+		_diamond_line(c, 11.0, col, 2.5)
+		_diamond(c, 4.5, col)
 
 
 func _draw_coherency(ppi: float) -> void:
@@ -398,28 +424,34 @@ func _draw_engagement(ppi: float) -> void:
 
 func _draw_unit(u: UnitState, ppi: float) -> void:
 	var side_col: Color = UITokens.SIDE_COLOURS[u.owner]
-	var dim: bool = acted.has(u)
-	var fill: Color = UITokens.with_alpha(side_col, 0.55 if dim else 0.95)
-	var is_selected: bool = u == selected
-	var highlight: Variant = highlights.get(u, null)
-	for p in _positions_of(u):
+	var fill: Color = UITokens.with_alpha(side_col, 0.5 if acted.has(u) else 1.0)
+	var mark: String = str(highlights.get(u, ""))
+	var positions: Array[Vector2] = _positions_of(u)
+	var r: float = u.base_radius * ppi
+	for p in positions:
 		var c: Vector2 = world_to_screen(p)
-		var r: float = u.base_radius * ppi
 		if u.owner == 0:
 			draw_circle(c, r, fill)
-			draw_arc(c, r, 0.0, TAU, 32, UITokens.CANVAS, 1.5)
 		else:
-			var pts := PackedVector2Array()
-			for k in range(6):
-				var a: float = TAU * float(k) / 6.0 + TAU / 12.0
-				pts.append(c + Vector2(cos(a), sin(a)) * r * 1.1)
-			draw_colored_polygon(pts, fill)
-			pts.append(pts[0])
-			draw_polyline(pts, UITokens.CANVAS, 1.5)
-		if is_selected:
-			draw_arc(c, r + 4.0, 0.0, TAU, 32, UITokens.ACCENT, 3.0)
-		if highlight != null:
-			_dashed_circle(c, r + 5.0, highlight as Color, 3.0)
+			draw_colored_polygon(_hex_points(c, r * 1.1), fill)
+		_outline(c, r, u.owner, UITokens.VOID, 1.5)
+		if u == selected:
+			_outline(c, r + 3.5, u.owner, UITokens.ACTION, 3.0)
+		elif mark == MARK_IN_RANGE:
+			_outline(c, r + 3.5, u.owner, UITokens.legal(settings.colour_blind), 2.5)
+	if u.starting_strength == 1 and u.wounds_per_model > 1 and not positions.is_empty():
+		_draw_wound_arc(u, world_to_screen(positions[0]), r)
+	if mark == MARK_TARGET:
+		_brackets(_unit_bounds(u, ppi).grow(6.0), UITokens.INK)
+
+
+## The arc around a large single model shows the wounds it has left.
+func _draw_wound_arc(u: UnitState, c: Vector2, r: float) -> void:
+	var fraction: float = float(u.total_wounds_left()) / float(u.wounds_per_model)
+	var radius: float = r * (1.1 if u.owner == 1 else 1.0) + 6.0
+	draw_arc(c, radius, 0.0, TAU, 48, UITokens.RAISED, 4.0, true)
+	if fraction > 0.0:
+		draw_arc(c, radius, -PI * 0.5, -PI * 0.5 + TAU * fraction, 48, UITokens.legal(settings.colour_blind), 4.0, true)
 
 
 func _draw_ghost(ppi: float) -> void:
@@ -438,42 +470,116 @@ func _draw_ghost(ppi: float) -> void:
 			draw_line(c + Vector2(-r, r) * 0.5, c + Vector2(r, -r) * 0.5, col, 2.5)
 
 
-func _draw_badge(u: UnitState, ppi: float) -> void:
-	var positions: Array[Vector2] = _positions_of(u)
-	if positions.is_empty():
-		return
-	var top: Vector2 = Vector2(0.0, INF)
-	var sum := Vector2.ZERO
-	for p in positions:
-		sum += p
-		if p.y < top.y:
-			top = p
-	var centre_x: float = sum.x / float(positions.size())
-	var anchor: Vector2 = world_to_screen(Vector2(centre_x, top.y)) - Vector2(0.0, u.base_radius * ppi + 10.0)
-	var font: Font = get_theme_default_font()
-	var size_px: int = UITokens.TEXT_SECONDARY
-	var label: String = u.unit_name
-	var detail: String = (UIText.t("badge.model_one") if u.model_count() == 1 else UIText.t("badge.models", [u.model_count()])) if u.wounds_per_model <= 1 or u.starting_strength > 1 \
-			else UIText.t("badge.wounds", [u.total_wounds_left(), u.wounds_per_model])
-	if u.starting_strength > 1 and u.wounds_per_model > 1:
-		detail = (UIText.t("badge.model_one") if u.model_count() == 1 else UIText.t("badge.models", [u.model_count()]))
-	var chips: String = ""
+func _draw_plates(ppi: float, board_rect: Rect2) -> void:
+	var units: Array[UnitState] = []
+	var entries: Array = []
+	for u in battle.units:
+		if _positions_of(u).is_empty() or (ppi < LABEL_MIN_PPI and u != selected):
+			continue
+		units.append(u)
+		entries.append({"size": _plate_size(u), "anchor": _unit_bounds(u, ppi).grow(8.0), "first": u == selected})
+	var view: Rect2 = board_rect.intersection(Rect2(Vector2.ZERO, size)).grow(-2.0)
+	var spots: Array[Rect2] = PlateLayout.arrange(entries, view)
+	for i in range(units.size()):
+		_draw_plate(units[i], spots[i])
+
+
+func _plate_name(u: UnitState) -> String:
+	var name_text: String = u.unit_name.to_upper()
+	if name_text.length() > PLATE_NAME_MAX:
+		name_text = name_text.left(PLATE_NAME_MAX - 1).strip_edges() + "…"
+	return name_text
+
+
+## The model count, or wounds left for a single large model.
+func _plate_count(u: UnitState) -> String:
+	if u.starting_strength == 1 and u.wounds_per_model > 1:
+		return "%d/%d" % [u.total_wounds_left(), u.wounds_per_model]
+	return str(u.model_count())
+
+
+func _plate_size(u: UnitState) -> Vector2:
+	var w: float = _plate_font.get_string_size(_plate_name(u), HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL).x
+	w += UITokens.FONT_MONO.get_string_size(_plate_count(u), HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL).x
 	if u.battle_shocked:
-		chips += "  " + UIText.t("chip.shocked")
-	var text: String = "%s · %s%s" % [label, detail, chips]
-	var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px)
-	var rect := Rect2(anchor - Vector2(text_size.x * 0.5 + UITokens.SPACE_2, text_size.y + UITokens.SPACE_2 * 1.5),
-			text_size + Vector2(UITokens.SPACE_2 * 2.0, UITokens.SPACE_1 * 2.0))
-	rect.position.x = clampf(rect.position.x, 2.0, size.x - rect.size.x - 2.0)
-	rect.position.y = maxf(2.0, rect.position.y)
-	_badge_box.bg_color = UITokens.with_alpha(UITokens.CANVAS, 0.88)
-	_badge_box.border_color = UITokens.SIDE_COLOURS[u.owner] if u != selected else UITokens.ACCENT
-	draw_style_box(_badge_box, rect)
-	draw_string(font, Vector2(rect.position.x + UITokens.SPACE_2, rect.position.y + UITokens.SPACE_1 + text_size.y * 0.8),
-			text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px, UITokens.TEXT)
+		w += _plate_font.get_string_size(UIText.t("chip.shocked_short"), HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL).x + PLATE_GAP
+	return Vector2(ceilf(w) + PLATE_GAP + UITokens.SPACE_2 * 2.0, 22.0)
+
+
+func _draw_plate(u: UnitState, rect: Rect2) -> void:
+	var side_col: Color = UITokens.SIDE_COLOURS[u.owner]
+	_plate_box.bg_color = UITokens.with_alpha(UITokens.HULL, 0.94)
+	_plate_box.border_color = UITokens.ACTION if u == selected else side_col
+	draw_style_box(_plate_box, rect)
+	var base: float = rect.position.y + 16.0
+	var x: float = rect.position.x + UITokens.SPACE_2
+	var name_text: String = _plate_name(u)
+	draw_string(_plate_font, Vector2(x, base), name_text, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL, UITokens.INK)
+	x += _plate_font.get_string_size(name_text, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL).x + PLATE_GAP
+	if u.battle_shocked:
+		var chip: String = UIText.t("chip.shocked_short")
+		draw_string(_plate_font, Vector2(x, base), chip, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL, UITokens.illegal(settings.colour_blind))
+		x += _plate_font.get_string_size(chip, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL).x + PLATE_GAP
+	draw_string(UITokens.FONT_MONO_BOLD, Vector2(x, base), _plate_count(u), HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_LABEL, side_col)
+
+
+func _unit_bounds(u: UnitState, ppi: float) -> Rect2:
+	var positions: Array[Vector2] = _positions_of(u)
+	var bounds := Rect2(world_to_screen(positions[0]), Vector2.ZERO)
+	for p in positions:
+		bounds = bounds.expand(world_to_screen(p))
+	return bounds.grow(u.base_radius * ppi)
 
 
 # ---------------------------------------------------------------- drawing helpers
+
+func _hex_points(c: Vector2, r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for k in range(6):
+		var a: float = TAU * float(k) / 6.0 + TAU / 12.0
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	return pts
+
+
+## An outline that follows the side's token shape.
+func _outline(c: Vector2, r: float, side: int, col: Color, width: float) -> void:
+	if side == 0:
+		draw_arc(c, r, 0.0, TAU, 32, col, width, true)
+		return
+	var pts: PackedVector2Array = _hex_points(c, r * 1.1)
+	pts.append(pts[0])
+	draw_polyline(pts, col, width, true)
+
+
+func _diamond(c: Vector2, r: float, col: Color) -> void:
+	draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0)]), col)
+
+
+func _diamond_line(c: Vector2, r: float, col: Color, width: float) -> void:
+	draw_polyline(PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0), c + Vector2(0, -r)]), col, width, true)
+
+
+## A filled rectangle with the Muster notch on the top-right and bottom-left corners.
+func _notched_rect(rect: Rect2, fill: Color, line: Color, width: float) -> void:
+	var n: float = minf(float(UITokens.NOTCH_MD), minf(rect.size.x, rect.size.y) * 0.3)
+	var p: Vector2 = rect.position
+	var e: Vector2 = rect.end
+	var pts := PackedVector2Array([p, Vector2(e.x - n, p.y), Vector2(e.x, p.y + n), e, Vector2(p.x + n, e.y), Vector2(p.x, e.y - n)])
+	draw_colored_polygon(pts, fill)
+	pts.append(pts[0])
+	draw_polyline(pts, line, width, true)
+
+
+## Corner brackets around a target.
+func _brackets(rect: Rect2, col: Color) -> void:
+	var l: float = minf(14.0, minf(rect.size.x, rect.size.y) * 0.3)
+	var p: Vector2 = rect.position
+	var e: Vector2 = rect.end
+	for corner: Array in [[p, Vector2(1, 1)], [Vector2(e.x, p.y), Vector2(-1, 1)], [Vector2(p.x, e.y), Vector2(1, -1)], [e, Vector2(-1, -1)]]:
+		var at: Vector2 = corner[0]
+		var dir: Vector2 = corner[1]
+		draw_polyline(PackedVector2Array([at + Vector2(dir.x * l, 0), at, at + Vector2(0, dir.y * l)]), col, 3.0)
+
 
 func _dashed_circle(c: Vector2, r: float, col: Color, width: float) -> void:
 	if r < 2.0:
@@ -483,41 +589,3 @@ func _dashed_circle(c: Vector2, r: float, col: Color, width: float) -> void:
 		var a0: float = TAU * float(i) / float(segs)
 		var a1: float = TAU * float(i + 1) / float(segs)
 		draw_arc(c, r, a0, a1, 4, col, width)
-
-
-func _dashed_rect(rect: Rect2, col: Color) -> void:
-	var tl: Vector2 = rect.position
-	var tr: Vector2 = Vector2(rect.end.x, rect.position.y)
-	var br: Vector2 = rect.end
-	var bl: Vector2 = Vector2(rect.position.x, rect.end.y)
-	draw_dashed_line(tl, tr, col, 1.5, 6.0)
-	draw_dashed_line(tr, br, col, 1.5, 6.0)
-	draw_dashed_line(br, bl, col, 1.5, 6.0)
-	draw_dashed_line(bl, tl, col, 1.5, 6.0)
-
-
-## Diagonal hatching clipped to a rectangle, so dense terrain reads without relying on colour.
-func _hatch(rect: Rect2, col: Color, spacing: float) -> void:
-	var k: float = -rect.size.y
-	while k < rect.size.x:
-		var a := Vector2(k, rect.size.y)
-		var b := Vector2(k + rect.size.y, 0.0)
-		var ca := Vector2(clampf(a.x, 0.0, rect.size.x), a.y)
-		var cb := Vector2(clampf(b.x, 0.0, rect.size.x), b.y)
-		if a.x < 0.0:
-			ca = Vector2(0.0, rect.size.y - (0.0 - a.x))
-		if b.x > rect.size.x:
-			cb = Vector2(rect.size.x, b.y + (b.x - rect.size.x))
-		if ca.y >= 0.0 and cb.y <= rect.size.y and ca.x <= rect.size.x:
-			draw_line(rect.position + ca, rect.position + cb, col, 1.0)
-		k += spacing
-
-
-func _dots(rect: Rect2, col: Color, spacing: float) -> void:
-	var y: float = spacing * 0.5
-	while y < rect.size.y:
-		var x: float = spacing * 0.5
-		while x < rect.size.x:
-			draw_circle(rect.position + Vector2(x, y), 1.5, col)
-			x += spacing
-		y += spacing

@@ -8,11 +8,16 @@ signal started(armies: Array)
 
 const MAX_UNITS := 12
 const NARROW_WIDTH := 900.0
+const ROW_HEIGHT := 60
+const TINY_WIDTH := 560.0
+const SHORT_HEIGHT := 500.0
 
 var _armies: Array = []
 var _sides: Array[Dictionary] = []     ## per side: widgets and picks
 var _row: BoxContainer
 var _status: Label
+var _wordmark: Control
+var _hint: Label
 var _start: Button
 var _web_callback: JavaScriptObject
 var _extra_path: String = ""
@@ -31,23 +36,32 @@ func setup(extra_path: String = "") -> void:
 # ---------------------------------------------------------------- building
 
 func _build() -> void:
+	theme_type_variation = "Screen"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var margin := MarginContainer.new()
-	for edge in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + edge, UITokens.SPACE_4)
+	margin.add_theme_constant_override("margin_left", UITokens.SPACE_3)
+	margin.add_theme_constant_override("margin_right", UITokens.SPACE_3)
+	margin.add_theme_constant_override("margin_top", UITokens.SPACE_3)
+	margin.add_theme_constant_override("margin_bottom", UITokens.SPACE_3)
 	add_child(margin)
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", UITokens.SPACE_3)
 	margin.add_child(root)
 
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", UITokens.SPACE_4)
+	root.add_child(head)
+	_wordmark = TopBar.make_wordmark("LabelWordmarkSmall")
+	head.add_child(_wordmark)
 	var title := Label.new()
 	title.text = UIText.t("roster.title")
-	title.add_theme_font_size_override("font_size", UITokens.TEXT_TITLE)
-	root.add_child(title)
-	var hint := Label.new()
-	hint.text = UIText.t("roster.hint")
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(hint)
+	title.theme_type_variation = "LabelTitle"
+	head.add_child(title)
+	_hint = Label.new()
+	_hint.text = UIText.t("roster.hint")
+	_hint.theme_type_variation = "LabelMeta"
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(_hint)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -55,23 +69,23 @@ func _build() -> void:
 	root.add_child(scroll)
 	_row = BoxContainer.new()
 	_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_row.add_theme_constant_override("separation", UITokens.SPACE_4)
+	_row.add_theme_constant_override("separation", UITokens.SPACE_6)
 	scroll.add_child(_row)
 	for side in range(2):
 		_sides.append(_build_side(side))
 
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_status)
-	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", UITokens.SPACE_2)
+	var bar := HFlowContainer.new()
 	root.add_child(bar)
 	bar.add_child(_button(UIText.t("roster.load_file"), _on_load_pressed))
 	bar.add_child(_button(UIText.t("roster.quick_fill"), _on_quick_fill))
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(spacer)
+	_status = Label.new()
+	_status.theme_type_variation = "LabelDim"
+	_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(_status)
 	_start = _button(UIText.t("roster.start"), _on_start)
+	_start.theme_type_variation = "PrimaryButton"
+	_start.icon = UIIcons.stripe(UITokens.ON_ACTION)
 	bar.add_child(_start)
 	resized.connect(_on_resized)
 	_on_resized()
@@ -82,12 +96,20 @@ func _build_side(side: int) -> Dictionary:
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.add_theme_constant_override("separation", UITokens.SPACE_2)
 	_row.add_child(col)
+	var head := HBoxContainer.new()
+	col.add_child(head)
+	head.add_child(ShapeMark.new(side, 14.0))
 	var header := Label.new()
 	header.text = UIText.t("roster.side_you") if side == 0 else UIText.t("roster.side_opponent")
-	header.add_theme_font_size_override("font_size", UITokens.TEXT_HEADING)
-	col.add_child(header)
+	header.theme_type_variation = "LabelHeading"
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(header)
+	var picked_label := Label.new()
+	picked_label.theme_type_variation = "LabelSmallStat"
+	head.add_child(picked_label)
 	var army_opt := OptionButton.new()
 	army_opt.custom_minimum_size.y = UITokens.HIT
+	army_opt.clip_text = true
 	army_opt.item_selected.connect(func(i: int) -> void: _set_army(side, i))
 	col.add_child(army_opt)
 	var search := LineEdit.new()
@@ -103,9 +125,11 @@ func _build_side(side: int) -> Dictionary:
 	var avail := VBoxContainer.new()
 	avail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	avail_scroll.add_child(avail)
-	var picked_label := Label.new()
-	picked_label.add_theme_font_size_override("font_size", UITokens.TEXT_BODY)
-	col.add_child(picked_label)
+	var picks_title := Label.new()
+	picks_title.text = UIText.t("roster.picks_title")
+	picks_title.theme_type_variation = "LabelSection"
+	picks_title.uppercase = true
+	col.add_child(picks_title)
 	var picks_scroll := ScrollContainer.new()
 	picks_scroll.custom_minimum_size.y = 200
 	picks_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -129,8 +153,10 @@ func _on_resized() -> void:
 	if _row == null:
 		return
 	_row.vertical = size.x < NARROW_WIDTH
+	_wordmark.visible = size.x >= TINY_WIDTH
+	_hint.visible = size.y >= SHORT_HEIGHT
 	# Wide: share the spare height between the two lists. Narrow: fixed heights, page scrolls.
-	var spare: float = maxf(size.y - 340.0, 280.0)
+	var spare: float = maxf(size.y - 400.0, 280.0)
 	for s in _sides:
 		(s["avail"] as Control).get_parent().custom_minimum_size.y = 240.0 if _row.vertical else spare * 0.55
 		(s["picks_box"] as Control).get_parent().custom_minimum_size.y = 200.0 if _row.vertical else spare * 0.45
@@ -170,15 +196,18 @@ func _set_army(side: int, index: int) -> void:
 	_update_start()
 
 
-func _unit_summary(u: Dictionary) -> String:
-	var models: String = UIText.t("roster.model_one")
-	if ArmyLoader.max_models(u) > 1:
-		var count: String = str(ArmyLoader.min_models(u))
-		if ArmyLoader.max_models(u) > ArmyLoader.min_models(u):
-			count += "-%d" % ArmyLoader.max_models(u)
-		models = UIText.t("roster.models_range", [count])
+func _models_text(u: Dictionary) -> String:
+	if ArmyLoader.max_models(u) <= 1:
+		return UIText.t("roster.model_one")
+	var count: String = str(ArmyLoader.min_models(u))
+	if ArmyLoader.max_models(u) > ArmyLoader.min_models(u):
+		count += "-%d" % ArmyLoader.max_models(u)
+	return UIText.t("roster.models_range", [count])
+
+
+func _stats_text(u: Dictionary) -> String:
 	return UIText.t("roster.unit_stats", [int(u.get("move", 0)), int(u.get("toughness", 0)),
-		int(u.get("save", 7)), int(u.get("wounds", 1)), models])
+		int(u.get("save", 7)), int(u.get("wounds", 1))])
 
 
 # ---------------------------------------------------------------- lists
@@ -186,8 +215,7 @@ func _unit_summary(u: Dictionary) -> String:
 func _fill_available(side: int) -> void:
 	var s: Dictionary = _sides[side]
 	var box: VBoxContainer = s["avail"]
-	for c in box.get_children():
-		c.queue_free()
+	_clear(box)
 	s["shown"] = []
 	if s["army"] < 0:
 		return
@@ -198,18 +226,65 @@ func _fill_available(side: int) -> void:
 		if needle != "" and not str(u["name"]).to_lower().contains(needle):
 			continue
 		s["shown"].append(i)
-		var b := Button.new()
-		b.text = "%s   ·   %s" % [u["name"], _unit_summary(u)]
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.clip_text = true
-		b.custom_minimum_size.y = UITokens.HIT
-		b.tooltip_text = _unit_tooltip(u)
-		b.pressed.connect(_add_pick.bind(side, i))
-		box.add_child(b)
+		box.add_child(_unit_row(side, i, u))
 	if box.get_child_count() == 0:
 		var empty := Label.new()
 		empty.text = UIText.t("roster.no_match")
+		empty.theme_type_variation = "LabelDim"
 		box.add_child(empty)
+
+
+## A selectable row: a check, the unit's name and size, and its key stats.
+func _unit_row(side: int, index: int, u: Dictionary) -> Button:
+	var count: int = 0
+	for p in _sides[side]["picks"]:
+		if p["unit"] == u:
+			count += 1
+	var b := Button.new()
+	b.theme_type_variation = "RowButtonOn" if count > 0 else "RowButton"
+	b.custom_minimum_size.y = ROW_HEIGHT
+	b.tooltip_text = _unit_tooltip(u)
+	b.pressed.connect(_add_pick.bind(side, index))
+	var row := HBoxContainer.new()
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = UITokens.SPACE_3
+	row.offset_right = -UITokens.SPACE_3
+	row.add_theme_constant_override("separation", UITokens.SPACE_3)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(row)
+	var check := TextureRect.new()
+	check.texture = UIIcons.get_icon("box_check" if count > 0 else "box", UITokens.ACTION if count > 0 else UITokens.EDGE_STRONG, 20)
+	check.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	check.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(check)
+	var names := VBoxContainer.new()
+	names.alignment = BoxContainer.ALIGNMENT_CENTER
+	names.add_theme_constant_override("separation", 0)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(names)
+	var name_label := Label.new()
+	name_label.text = str(u["name"]) if count <= 1 else "%s  ×%d" % [u["name"], count]
+	name_label.theme_type_variation = "LabelRowName"
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	names.add_child(name_label)
+	var models := Label.new()
+	models.text = _models_text(u)
+	models.theme_type_variation = "LabelMeta"
+	names.add_child(models)
+	var stats := Label.new()
+	stats.text = _stats_text(u)
+	stats.theme_type_variation = "LabelSmallStat"
+	stats.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(stats)
+	return b
+
+
+func _clear(box: Control) -> void:
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
 
 
 func _unit_tooltip(u: Dictionary) -> String:
@@ -227,12 +302,14 @@ func _add_pick(side: int, unit_index: int) -> void:
 	var u: Dictionary = _armies[s["army"]]["units"][unit_index]
 	(s["picks"] as Array).append({"unit": u, "models": ArmyLoader.min_models(u)})
 	_status.text = ""
+	_fill_available(side)
 	_fill_picks(side)
 	_update_start()
 
 
 func _remove_pick(side: int, pick_index: int) -> void:
 	(_sides[side]["picks"] as Array).remove_at(pick_index)
+	_fill_available(side)
 	_fill_picks(side)
 	_update_start()
 
@@ -240,8 +317,7 @@ func _remove_pick(side: int, pick_index: int) -> void:
 func _fill_picks(side: int) -> void:
 	var s: Dictionary = _sides[side]
 	var box: VBoxContainer = s["picks_box"]
-	for c in box.get_children():
-		c.queue_free()
+	_clear(box)
 	var picks: Array = s["picks"]
 	(s["picked_label"] as Label).text = UIText.t("roster.picked", [picks.size(), MAX_UNITS])
 	for i in range(picks.size()):
@@ -252,6 +328,7 @@ func _fill_picks(side: int) -> void:
 		var name_label := Label.new()
 		name_label.text = u["name"]
 		name_label.clip_text = true
+		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(name_label)
 		if ArmyLoader.max_models(u) > ArmyLoader.min_models(u):
@@ -262,8 +339,12 @@ func _fill_picks(side: int) -> void:
 			spin.custom_minimum_size = Vector2(UITokens.HIT * 2.5, UITokens.HIT)
 			spin.value_changed.connect(func(v: float) -> void: p["models"] = int(v))
 			row.add_child(spin)
-		var rm := _button(UIText.t("roster.remove"), _remove_pick.bind(side, i))
-		rm.custom_minimum_size.x = UITokens.HIT * 1.5
+		var rm := Button.new()
+		rm.icon = UIIcons.get_icon("close", UITokens.INK, 18)
+		rm.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rm.tooltip_text = UIText.t("roster.remove")
+		rm.custom_minimum_size = Vector2(UITokens.HIT, UITokens.HIT)
+		rm.pressed.connect(_remove_pick.bind(side, i))
 		row.add_child(rm)
 		box.add_child(row)
 
@@ -292,6 +373,7 @@ func _on_quick_fill() -> void:
 		for idx in order.slice(0, mini(5, units.size())):
 			var u: Dictionary = units[idx]
 			(s["picks"] as Array).append({"unit": u, "models": ArmyLoader.min_models(u)})
+		_fill_available(side)
 		_fill_picks(side)
 	_update_start()
 
