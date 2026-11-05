@@ -144,6 +144,8 @@ def parse_pdf(pdf: Path) -> dict:
     rec = {"source_file": pdf.name, "unparsed": []}
     p1 = pages[0].splitlines()
     parse_page1(p1, rec)
+    # -table can split words in a large title, so the name comes from -layout.
+    rec["name"] = next((l.strip() for l in pdf_pages(pdf, "-layout")[0].splitlines() if l.strip()), rec["name"])
     full = "\n".join(pages)
     inv = re.search(r"INVULNERABLE SAVE\s*(\d)\+", full) or re.search(r"(\d)\+\s+INVULNERABLE SAVE", full)
     rec["invuln_printed"] = int(inv.group(1)) if inv else None

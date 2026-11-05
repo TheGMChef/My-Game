@@ -229,7 +229,7 @@ def map_unit(rec):
         issues.append(("info", "Leader: attachment not modelled yet"))
     kws = [k.upper() for k in rec.get("keywords", [])]
     unit = {
-        "name": rec["name"], "models": lo, "models_min": lo, "models_max": hi,
+        "name": " ".join(rec["name"].split()), "models": lo, "models_min": lo, "models_max": hi,
         "move": num(prof["m"]), "toughness": int(prof["t"]), "save": num(prof["sv"], 7),
         "invuln": rec.get("invuln_printed") or 0, "wounds": int(prof["w"]),
         "leadership": num(prof["ld"], 6), "oc": int(prof["oc"]),

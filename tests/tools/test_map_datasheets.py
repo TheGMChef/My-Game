@@ -112,3 +112,8 @@ def test_dice_valued_ability_becomes_its_fixed_average():
     unit, issues = m.map_unit(fake(weapons=[weapon], composition_raw=["■ 1 Test", "This model is equipped with: gun."]))
     assert unit["weapons"][0]["abilities"] == ["SUSTAINED HITS 2", "RAPID FIRE 4"]
     assert any("SUSTAINED HITS D3" in text and "fixed" in text for _, text in issues)
+
+
+def test_gaps_in_unit_names_are_collapsed():
+    unit, _ = m.map_unit(fake(name="TEST     SQUAD"))
+    assert unit["name"] == "TEST SQUAD"

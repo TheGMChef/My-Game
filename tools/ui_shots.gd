@@ -43,7 +43,9 @@ func _run() -> void:
 		game._settings_changed()
 	game._set_settings_visible(true)
 	await _shot("settings")
-	game._set_settings_visible(false)
+	# Closed by hand: the real close button saves, and a11y shots must not change saved settings.
+	game._settings_panel.visible = false
+	game._scrim.visible = false
 	game._on_unit_tapped(game.battle.living(0)[0])
 	var side: SidePanel = _find(root, "SidePanel")
 	if not side.visible:
