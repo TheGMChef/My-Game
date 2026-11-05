@@ -54,6 +54,7 @@ var _portrait: bool = false
 var _phone: bool = false
 var skip_roster: bool = false    ## tests and tools set this to go straight to the placeholder battle
 var skip_title: bool = false     ## tools set this to open on the roster
+var battle_seed: int = -1         ## tools set this to repeat a game exactly
 var _args: Dictionary = {}
 var _armies_in_play: Array = []
 var _roster: RosterScreen
@@ -99,7 +100,7 @@ func _show_roster() -> void:
 
 func _start_battle(armies: Array) -> void:
 	_armies_in_play = armies
-	_load_battle(armies, int(_args.get("seed", Time.get_ticks_msec() % 100000)))
+	_load_battle(armies, battle_seed if battle_seed >= 0 else int(_args.get("seed", Time.get_ticks_msec() % 100000)))
 	_build_ui()
 	_apply_scale()
 	board.battle = battle
