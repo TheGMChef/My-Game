@@ -8,7 +8,7 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
 
 ## Status
 
-- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (93 tests passing headless).
+- **Rules engine started** in `src/engine/` (GDScript), tested with gdUnit4 (95 tests passing headless).
   Built so far: seedable dice, geometry helpers, weapon abilities (anti, blast, cleave, rapid fire, lethal hits,
   sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.

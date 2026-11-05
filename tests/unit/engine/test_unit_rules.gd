@@ -124,3 +124,11 @@ func test_new_positions_must_match_model_count() -> void:
 	var u := _unit(0, [Vector2(10, 10), Vector2(11.5, 10)] as Array[Vector2], {"move": 6})
 	var r := UnitRules.check_move(u, [Vector2(10, 10)] as Array[Vector2], "normal", [u], BOARD)
 	assert_bool(r["ok"]).is_false()
+
+func test_coherency_gap_just_over_two_inches_fails() -> void:
+	var pts: Array[Vector2] = [Vector2(0, 0), Vector2(3.1, 0)]  # edge gap 2.1"
+	assert_bool(UnitRules.in_coherency(pts, 0.5)).is_false()
+
+func test_coherency_gap_of_exactly_two_inches_passes() -> void:
+	var pts: Array[Vector2] = [Vector2(0, 0), Vector2(3.0, 0)]  # edge gap 2.0"
+	assert_bool(UnitRules.in_coherency(pts, 0.5)).is_true()
