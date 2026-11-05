@@ -1,0 +1,23 @@
+{
+  "name": "my-game",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Personal-use tabletop battle simulator with AI opponents (web first, then tablet and mobile)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "sim": "node tools/simulate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}

@@ -1,0 +1,113 @@
+[
+  {
+    "id": "line-troopers",
+    "name": "Line Troopers",
+    "short": "LT",
+    "models": 10,
+    "toughness": 3,
+    "save": 4,
+    "wounds": 1,
+    "move": 6,
+    "points": 90,
+    "baseRadius": 0.6,
+    "weapons": [
+      { "name": "Service rifle", "kind": "ranged", "range": 24, "attacks": 1, "skill": 4, "strength": 4, "ap": 0, "damage": 1, "count": "all" },
+      { "name": "Rifle butt", "kind": "melee", "range": 0, "attacks": 1, "skill": 4, "strength": 3, "ap": 0, "damage": 1, "count": "all" }
+    ]
+  },
+  {
+    "id": "support-gunners",
+    "name": "Support Gunners",
+    "short": "SG",
+    "models": 4,
+    "toughness": 3,
+    "save": 4,
+    "wounds": 2,
+    "move": 5,
+    "points": 80,
+    "baseRadius": 0.7,
+    "weapons": [
+      { "name": "Heavy cannon", "kind": "ranged", "range": 36, "attacks": "D6", "skill": 4, "strength": 7, "ap": 1, "damage": 2, "count": 2 },
+      { "name": "Sidearm", "kind": "ranged", "range": 12, "attacks": 1, "skill": 4, "strength": 3, "ap": 0, "damage": 1, "count": "all" },
+      { "name": "Knife", "kind": "melee", "range": 0, "attacks": 1, "skill": 4, "strength": 3, "ap": 0, "damage": 1, "count": "all" }
+    ]
+  },
+  {
+    "id": "armoured-walker",
+    "name": "Armoured Walker",
+    "short": "AW",
+    "models": 1,
+    "toughness": 8,
+    "save": 3,
+    "wounds": 12,
+    "move": 8,
+    "points": 140,
+    "baseRadius": 1.6,
+    "weapons": [
+      { "name": "Autocannon", "kind": "ranged", "range": 30, "attacks": "D6+2", "skill": 3, "strength": 9, "ap": 2, "damage": "D6", "count": 1 },
+      { "name": "Stomp", "kind": "melee", "range": 0, "attacks": 4, "skill": 4, "strength": 8, "ap": 1, "damage": 2, "count": 1 }
+    ]
+  },
+  {
+    "id": "assault-brutes",
+    "name": "Assault Brutes",
+    "short": "AB",
+    "models": 5,
+    "toughness": 5,
+    "save": 4,
+    "wounds": 3,
+    "move": 8,
+    "points": 130,
+    "baseRadius": 0.8,
+    "weapons": [
+      { "name": "Cleaver", "kind": "melee", "range": 0, "attacks": 3, "skill": 3, "strength": 6, "ap": 1, "damage": 1, "count": "all" }
+    ]
+  },
+  {
+    "id": "horde-troops",
+    "name": "Horde Troops",
+    "short": "HT",
+    "models": 12,
+    "toughness": 3,
+    "save": 5,
+    "wounds": 1,
+    "move": 6,
+    "points": 80,
+    "baseRadius": 0.55,
+    "weapons": [
+      { "name": "Carbine", "kind": "ranged", "range": 18, "attacks": 2, "skill": 5, "strength": 3, "ap": 0, "damage": 1, "count": "all" },
+      { "name": "Blade", "kind": "melee", "range": 0, "attacks": 2, "skill": 4, "strength": 3, "ap": 0, "damage": 1, "count": "all" }
+    ]
+  },
+  {
+    "id": "raider-beasts",
+    "name": "Raider Beasts",
+    "short": "RB",
+    "models": 5,
+    "toughness": 4,
+    "save": 5,
+    "wounds": 2,
+    "move": 10,
+    "points": 100,
+    "baseRadius": 0.8,
+    "weapons": [
+      { "name": "Claws", "kind": "melee", "range": 0, "attacks": 3, "skill": 3, "strength": 5, "ap": 1, "damage": 1, "count": "all" }
+    ]
+  },
+  {
+    "id": "siege-cannon",
+    "name": "Siege Cannon",
+    "short": "SC",
+    "models": 1,
+    "toughness": 7,
+    "save": 4,
+    "wounds": 10,
+    "move": 4,
+    "points": 100,
+    "baseRadius": 1.4,
+    "weapons": [
+      { "name": "Siege gun", "kind": "ranged", "range": 48, "attacks": "2D6", "skill": 4, "strength": 8, "ap": 2, "damage": "D3", "count": 1 },
+      { "name": "Ram", "kind": "melee", "range": 0, "attacks": 3, "skill": 4, "strength": 6, "ap": 0, "damage": 1, "count": 1 }
+    ]
+  }
+]

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title></title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <!-- All visible text is filled in from src/ui/strings.ts (see data-i18n attributes). -->
+    <main class="app">
+      <section class="board-wrap">
+        <canvas id="board" role="img" data-i18n-aria="boardLabel"></canvas>
+        <div id="banner" class="banner" role="status" hidden></div>
+      </section>
+      <aside class="panel">
+        <h1 data-i18n="title"></h1>
+        <div id="status" class="status" role="status"></div>
+        <p id="hint" class="hint"></p>
+        <div class="row">
+          <button id="end-phase" type="button" class="primary"></button>
+          <button id="new-game" type="button" data-i18n="newGame"></button>
+        </div>
+        <div class="row">
+          <label><span data-i18n="mode"></span>
+            <select id="mode">
+              <option value="human" data-i18n="modeHuman"></option>
+              <option value="ai" data-i18n="modeAi"></option>
+            </select>
+          </label>
+          <label><span data-i18n="seed"></span>
+            <input id="seed" type="number" inputmode="numeric" min="0" step="1" />
+          </label>
+        </div>
+        <div class="row">
+          <label><span data-i18n="textSize"></span>
+            <select id="text-size">
+              <option value="1" data-i18n="size100"></option>
+              <option value="1.25" data-i18n="size125"></option>
+              <option value="1.5" data-i18n="size150"></option>
+            </select>
+          </label>
+          <label><span data-i18n="colours"></span>
+            <select id="colours">
+              <option value="default" data-i18n="coloursDefault"></option>
+              <option value="safe" data-i18n="coloursSafe"></option>
+            </select>
+          </label>
+        </div>
+        <div id="armies" class="armies"></div>
+        <div id="selected" class="selected"></div>
+        <h2 data-i18n="logHeading"></h2>
+        <ol id="log" class="log" aria-live="polite"></ol>
+      </aside>
+    </main>
+    <script type="module" src="/src/ui/main.ts"></script>
+  </body>
+</html>

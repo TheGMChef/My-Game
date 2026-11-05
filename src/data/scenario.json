@@ -1,0 +1,28 @@
+{
+  "name": "Open Field Skirmish",
+  "board": { "width": 44, "height": 30 },
+  "roundLimit": 5,
+  "players": [
+    {
+      "name": "Blue Legion",
+      "color": "#4da3ff",
+      "units": [
+        { "profile": "line-troopers", "x": 6, "y": 8 },
+        { "profile": "line-troopers", "x": 6, "y": 22 },
+        { "profile": "support-gunners", "x": 4, "y": 15 },
+        { "profile": "armoured-walker", "x": 9, "y": 15 }
+      ]
+    },
+    {
+      "name": "Red Horde",
+      "color": "#ff6b5e",
+      "units": [
+        { "profile": "horde-troops", "x": 38, "y": 8 },
+        { "profile": "horde-troops", "x": 38, "y": 22 },
+        { "profile": "raider-beasts", "x": 35, "y": 12 },
+        { "profile": "raider-beasts", "x": 35, "y": 18 },
+        { "profile": "siege-cannon", "x": 40, "y": 15 }
+      ]
+    }
+  ]
+}
