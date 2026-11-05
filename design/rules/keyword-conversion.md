@@ -41,6 +41,8 @@ wound roll. Any other tag is reported as "not applied".
 
 ## Not converted
 
+- **Unit-specific weapon rules** on fortifications, [DEFENSIVE ARRAY] and [HIVE DEFENCES], aren't core
+  abilities. Reports list them as not applied.
 - **Faction rules** such as Reanimation Protocols and named unit abilities need the faction packs and
   their own engine work. Reports list them as not applied.
 - **Damaged profiles** are read from the sheet but not applied.

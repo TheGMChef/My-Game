@@ -55,6 +55,7 @@ var _phone: bool = false
 var skip_roster: bool = false    ## tests and tools set this to go straight to the placeholder battle
 var skip_title: bool = false     ## tools set this to open on the roster
 var battle_seed: int = -1         ## tools set this to repeat a game exactly
+var armies_override: Array = []   ## tools set this to play skip_roster games with other armies
 var _args: Dictionary = {}
 var _armies_in_play: Array = []
 var _roster: RosterScreen
@@ -68,7 +69,7 @@ func _ready() -> void:
 	get_window().size_changed.connect(_apply_scale)
 	_apply_scale()
 	if skip_roster or _args.has("quick"):
-		_start_battle(_placeholder_armies())
+		_start_battle(_placeholder_armies() if armies_override.is_empty() else armies_override)
 	elif skip_title:
 		_show_roster()
 	else:
