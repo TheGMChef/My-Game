@@ -50,6 +50,8 @@ var _settings_panel: PanelContainer
 var _over_panel: PanelContainer
 var _over_text: Label
 var _zoom_box: VBoxContainer
+var _body: BoxContainer
+var _portrait: bool = false
 
 
 func _ready() -> void:
@@ -67,6 +69,7 @@ func _ready() -> void:
 	board.empty_tapped.connect(_on_empty_tapped)
 	board.drag_moved.connect(_on_drag_moved)
 	board.drag_ended.connect(_on_drag_ended)
+	board.drag_cancelled.connect(_on_drag_cancelled)
 	_begin_turn_once()
 	_consume_events()
 	_refresh()
@@ -183,13 +186,15 @@ func _build_ui() -> void:
 
 	root.add_child(_build_top_bar())
 
-	var body := HBoxContainer.new()
+	var body := BoxContainer.new()
+	_body = body
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 0)
 	root.add_child(body)
 
 	var board_col := VBoxContainer.new()
 	board_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	board_col.add_theme_constant_override("separation", 0)
 	body.add_child(board_col)
 
@@ -464,18 +469,34 @@ func _toggle_info() -> void:
 ## compact layout (side panel behind a button) when the logical width is small.
 func _apply_scale() -> void:
 	var win: Window = get_window()
-	var base: float = clampf(minf(float(win.size.x) / 1280.0, float(win.size.y) / 800.0), 1.0, 2.0)
-	var factor: float = base * settings.text_scale()
+	# The window is measured in device pixels. Work out the size in CSS/point units first, so a
+	# 48-unit button stays about 48 points across on a 2x tablet as well as a 1x monitor.
+	var dpr: float = maxf(1.0, DisplayServer.screen_get_scale())
+	var css_w: float = float(win.size.x) / dpr
+	var css_h: float = float(win.size.y) / dpr
+	var base: float = clampf(minf(css_w / 1280.0, css_h / 800.0), 1.0, 2.0)
+	var factor: float = base * dpr * settings.text_scale()
 	# Make the stretch base equal to the window so only our own factor scales the interface.
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 	if win.content_scale_size != win.size:
 		win.content_scale_size = win.size
 	win.content_scale_factor = factor
 	var logical_width: float = float(win.size.x) / factor
+	var logical_height: float = float(win.size.y) / factor
+	_portrait = logical_height > logical_width * 1.1
 	_compact = logical_width < COMPACT_BELOW
-	_info_button.visible = _compact
-	_side.visible = (not _compact) or _info_open
-	_side.custom_minimum_size.x = minf(UITokens.SIDE_PANEL, logical_width * 0.5) if _compact else UITokens.SIDE_PANEL
+	_body.vertical = _portrait
+	if _portrait:
+		# Portrait tablet: the board on top, the explanation panel docked below it.
+		_info_button.visible = false
+		_side.visible = true
+		_side.custom_minimum_size = Vector2(0, logical_height * 0.36)
+		_side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		_info_button.visible = _compact
+		_side.visible = (not _compact) or _info_open
+		_side.size_flags_horizontal = Control.SIZE_FILL
+		_side.custom_minimum_size = Vector2(minf(UITokens.SIDE_PANEL, logical_width * 0.5) if _compact else UITokens.SIDE_PANEL, 0)
 	board.queue_redraw()
 
 
@@ -554,6 +575,12 @@ func _cycle_unit(step: int) -> void:
 func _on_drag_moved(u: UnitState, delta: Vector2) -> void:
 	_delta = _clamped(u, delta)
 	_update_ghost_verdict()
+	_refresh()
+
+
+func _on_drag_cancelled() -> void:
+	_delta = Vector2.ZERO
+	_verdict = {}
 	_refresh()
 
 

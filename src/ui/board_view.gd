@@ -8,10 +8,12 @@ signal unit_tapped(unit: UnitState)
 signal empty_tapped(world_pos: Vector2)
 signal drag_moved(unit: UnitState, delta: Vector2)
 signal drag_ended(unit: UnitState, delta: Vector2)
+## Emitted when a second finger lands mid-drag, so the move preview is thrown away.
+signal drag_cancelled
 signal view_changed
 
-const MIN_TAP_RADIUS := 24.0
-const DRAG_START_PX := 8.0
+const MIN_TAP_RADIUS := 28.0
+const DRAG_START_PX := 10.0
 
 const LABEL_MIN_PPI: float = 11.0
 
@@ -38,6 +40,9 @@ var _pressing: bool = false
 var _drag_unit: UnitState
 var _panning: bool = false
 var _moved_far: bool = false
+var _touches: Dictionary = {}              # finger index -> position
+var _pinch_dist: float = 0.0
+var _pinch_mid: Vector2 = Vector2.ZERO
 var _fx: Array[Dictionary] = []
 var _badge_box := StyleBoxFlat.new()
 
@@ -134,6 +139,8 @@ func _process(delta: float) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if battle == null:
 		return
+	if event is InputEventMouse and (event as InputEventMouse).device == InputEvent.DEVICE_ID_EMULATION:
+		return  # a finger pretending to be a mouse; real touch events below handle fingers
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
@@ -149,12 +156,70 @@ func _gui_input(event: InputEvent) -> void:
 		var mm := event as InputEventMouseMotion
 		if _pressing:
 			_on_motion(mm.position, mm.relative)
+	elif event is InputEventScreenTouch:
+		_on_touch(event as InputEventScreenTouch)
+	elif event is InputEventScreenDrag:
+		_on_touch_drag(event as InputEventScreenDrag)
 	elif event is InputEventMagnifyGesture:
 		zoom_by((event as InputEventMagnifyGesture).factor, (event as InputEventMagnifyGesture).position)
 	elif event is InputEventPanGesture:
 		_pan -= (event as InputEventPanGesture).delta * 8.0
 		_clamp_pan()
 		queue_redraw()
+
+
+## Two fingers pinch to zoom and slide to pan; they cancel any one-finger drag in progress.
+func _on_touch(t: InputEventScreenTouch) -> void:
+	if t.pressed:
+		_touches[t.index] = t.position
+		if _touches.size() == 1:
+			_on_press(t.position, false)
+		elif _touches.size() == 2:
+			_cancel_press()
+			_pinch_start()
+	else:
+		var was_single: bool = _touches.size() == 1
+		_touches.erase(t.index)
+		if was_single:
+			_on_release(t.position)
+		elif _touches.size() == 2:
+			_pinch_start()
+
+
+func _on_touch_drag(d: InputEventScreenDrag) -> void:
+	if not _touches.has(d.index):
+		return
+	_touches[d.index] = d.position
+	if _touches.size() == 1:
+		if _pressing:
+			_on_motion(d.position, d.relative)
+		return
+	if _touches.size() != 2:
+		return
+	var pts: Array = _touches.values()
+	var dist: float = (pts[0] as Vector2).distance_to(pts[1])
+	var mid: Vector2 = ((pts[0] as Vector2) + (pts[1] as Vector2)) * 0.5
+	if _pinch_dist > 8.0 and dist > 8.0:
+		zoom_by(dist / _pinch_dist, mid)
+	_pan += mid - _pinch_mid
+	_clamp_pan()
+	_pinch_dist = dist
+	_pinch_mid = mid
+	queue_redraw()
+
+
+func _pinch_start() -> void:
+	var pts: Array = _touches.values()
+	_pinch_dist = (pts[0] as Vector2).distance_to(pts[1])
+	_pinch_mid = ((pts[0] as Vector2) + (pts[1] as Vector2)) * 0.5
+
+
+func _cancel_press() -> void:
+	if _pressing and _drag_unit != null and _moved_far:
+		drag_cancelled.emit()
+	_pressing = false
+	_drag_unit = null
+	_panning = false
 
 
 func _on_press(pos: Vector2, force_pan: bool) -> void:
