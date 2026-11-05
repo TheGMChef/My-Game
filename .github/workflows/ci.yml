@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Download Godot
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          file="Godot_v${GODOT_VERSION}_linux.x86_64"
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}"
+          mkdir -p ~/godot && cd ~/godot
+          curl -fsSL -o "$file.zip" "$base/$file.zip"
+          curl -fsSL -o sums.txt "$base/SHA512-SUMS.txt"
+          grep " $file.zip\$" sums.txt | sha512sum --check -
+          unzip -q "$file.zip" && rm "$file.zip" sums.txt
+          mv "$file" godot
+
+      - name: Import project
+        run: ~/godot/godot --headless --path . --import
+
+      - name: Run Godot tests
+        run: >
+          ~/godot/godot --headless -s -d --remote-debug tcp://127.0.0.1:0
+          res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://tests --ignoreHeadlessMode
+
+      - name: Play full games through the UI
+        run: ~/godot/godot --headless --path . -s tools/playtest.gd -- 20 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run importer tests
+        run: |
+          pip install pytest
+          python -m pytest -q tests/tools
+
+      - name: Keep test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: reports/
+          if-no-files-found: ignore
