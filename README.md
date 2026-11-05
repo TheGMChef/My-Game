@@ -13,7 +13,7 @@ A 2D top-down tabletop battle simulator with AI opponents, built in Godot 4.7 wi
   sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, terrain (cover, hidden, obscuring, solid), unit-level shooting and melee, a battle orchestrator with a simple AI, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
 - **Not built yet:**
-  stratagems, transports, attached units, reserves, desperate escape, UI, AI.
+  stratagems, transports, attached units, reserves, desperate escape, a board UI, a smarter AI.
 - **Rules source:** official 11th edition PDFs, summarised in own words in `design/rules/`. Gaps that the PDFs do not
   cover (modifier caps, re-rolls, points) are listed there and are not guessed.
 - **Scenario:** `assets/data/scenario_clash_of_patrols.json` is a placeholder from the 2023 (10th edition) Combat Patrol
