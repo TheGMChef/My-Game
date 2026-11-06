@@ -22,7 +22,10 @@ The engine reads every mission value from that file, so adapting means editing d
 | Round 5 timing | second player scores at end of turn | Whether this still applies |
 | Securing | non-shocked BATTLELINE at end of Command phase | Whether BATTLELINE still secures, and the OC rules |
 | Mission rule | Retrieve Intelligence (1 CP per recovery) | Replaced by a new mission rule? |
-| First turn | not modelled | Who goes first, and how it is decided |
+| First turn | roll-off after deployment, as the 11th edition mission page says | Nothing, unless the book differs |
+| Deployment order | Alternating, Defender first, side 1 is always Defender | Add the Attacker and Defender roll-off if it starts to matter |
+| Starting CP | 0, unsourced | The value, if the book gives one |
+| Banned stratagems | none (`banned_stratagems`) | The mission page bans Crushing Impact, Explosives and Rapid Ingress: list them once the scenario is confirmed |
 | Battle size / points | not modelled | Combat Patrol force composition and points in 11th edition |
 
 ## How to adapt

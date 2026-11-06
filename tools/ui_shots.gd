@@ -46,6 +46,47 @@ func _settings_tabs(game: GameRoot, prefix: String) -> void:
 	d.close()
 	await process_frame
 
+## The deployment stage: a unit in hand, a bad spot, then everything down with the human first.
+func _deployment(game: GameRoot) -> void:
+	var u: UnitState = game.battle.undeployed_of(0)[0]
+	game._on_tray_pressed(u.id)
+	await _shot("deploy-placing")
+	game._on_drag_moved(u, Vector2(25, 0))
+	await _shot("deploy-illegal")
+	game._on_drag_cancelled()
+	await game._on_place_pressed()
+	game._request_next()
+	await _shot("deploy-ready")
+	game.battle.dice = Dice.new(1, [6, 1])
+	await game._on_start_battle_pressed()
+	game.battle.dice = Dice.new(5)
+	game.battle.flow.command_points = [3, 3]
+	game._refresh()
+
+
+## Play on to the first stratagem question of the AI's turn. The AI loop is not awaited: it is
+## what waits for the answer.
+func _prompt(game: GameRoot) -> void:
+	var mine: UnitState = game.battle.living(0)[0]
+	var y: float = 3.0
+	for e: UnitState in game.battle.living(1):
+		var offset: Vector2 = Vector2(mine.centre().x + 14.0, y) - e.centre()
+		for m in e.models:
+			m["pos"] = m["pos"] + offset
+		y += 9.0
+	for i in range(600):
+		if game.prompt_open():
+			break
+		if not game._busy and game.battle.fight_chooser() == 0:
+			game._on_unit_tapped(game.battle.fight_options()[0])
+			game._on_skip_fight_pressed()
+		elif not game._busy:
+			game._on_next_pressed()
+		await process_frame
+	await _shot("prompt")
+	game._on_prompt_pass()
+
+
 func _run() -> void:
 	var game: GameRoot = _find(root, "GameRoot")
 	if a11y:
@@ -77,6 +118,7 @@ func _run() -> void:
 	await process_frame
 	game._pause.close()
 	await process_frame
+	await _deployment(game)
 	var side: SidePanel = _find(root, "SidePanel")
 	if not side.visible:
 		game._toggle_info()
@@ -97,10 +139,15 @@ func _run() -> void:
 	side._tabs[2].button_pressed = true
 	side._show_page(2)
 	await _shot("tab-log")
+	side._tabs[4].button_pressed = true
+	side._show_page(4)
+	await _shot("tab-stratagems")
 	if game._info_open:
 		game._toggle_info()
 	game._on_empty_tapped(Vector2.ZERO)
 	game._set_ruler(true)
 	game.board.set_measurement(game.battle.living(0)[0].centre(), game.battle.living(1)[0].centre())
 	await _shot("ruler")
+	game._set_ruler(false)
+	await _prompt(game)
 	quit()

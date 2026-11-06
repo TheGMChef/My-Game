@@ -16,6 +16,8 @@ extends RefCounted
 ##   wound_mod (int)     total modifier to the wound roll
 ##   models_firing (int) number of attacking models using this weapon (default 1)
 ##   indirect_min (int)  [INDIRECT FIRE] attacks: an unmodified hit roll below this fails (10.07)
+##   snap (bool)         snap shooting (15.09): every attack rolls and only an unmodified 6 hits
+##   precision (bool)    the weapon counts as [PRECISION] (Epic Challenge)
 
 
 ## The roll needed to wound (core rules 05.02).
@@ -101,7 +103,7 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 	var indirect_min: int = int(ctx.get("indirect_min", 0))
 	var to_wound: int = 0       # hits that still need a wound roll
 	var auto_wounds: int = 0    # lethal hits: wound without a roll
-	var torrent: bool = weapon.has("TORRENT")
+	var torrent: bool = weapon.has("TORRENT") and not bool(ctx.get("snap", false))
 	var sustained: Dictionary = weapon.ability("SUSTAINED HITS", target.keywords)
 	var lethal: bool = weapon.has("LETHAL HITS", target.keywords)
 	var hit_rolls: Array[int] = []
@@ -134,7 +136,7 @@ static func resolve(weapon: Weapon, target: UnitState, dice: Dice, ctx: Dictiona
 	var anti_at: int = int(anti["threshold"]) if not anti.is_empty() else 7
 	var devastating: bool = weapon.has("DEVASTATING WOUNDS")
 	var twin_linked: bool = weapon.has("TWIN-LINKED")
-	var precision: bool = weapon.has("PRECISION")
+	var precision: bool = weapon.has("PRECISION") or bool(ctx.get("precision", false))
 	var normal_wounds: int = auto_wounds
 	var devastating_crits: int = 0
 	report["wounds"] += auto_wounds

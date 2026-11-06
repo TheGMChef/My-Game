@@ -26,7 +26,10 @@ static func usable(path: String = PATH) -> bool:
 	var data: Dictionary = read(path)
 	if data.is_empty():
 		return false
-	return data["battle"] is Dictionary and int((data["battle"] as Dictionary).get("version", 0)) == Battle.SAVE_VERSION
+	if not data["battle"] is Dictionary:
+		return false
+	var version: int = int((data["battle"] as Dictionary).get("version", 0))
+	return version >= Battle.OLDEST_SAVE_VERSION and version <= Battle.SAVE_VERSION
 
 
 static func write(data: Dictionary, path: String = PATH) -> bool:

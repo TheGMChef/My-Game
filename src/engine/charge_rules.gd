@@ -70,6 +70,25 @@ static func check_move(unit: UnitState, new_positions: Array[Vector2], targets: 
 	return {"ok": true, "reason": ""}
 
 
+## A straight-line charge towards the nearest of [param targets] that passes [method check_move],
+## longest first, or an empty array if there is none. Used wherever nobody is dragging the unit.
+static func auto_positions(unit: UnitState, targets: Array[UnitState], max_distance: int, all_units: Array,
+		board: Rect2, terrain: Array = []) -> Array[Vector2]:
+	var order: Array = targets.duplicate()
+	order.sort_custom(func(a: UnitState, b: UnitState) -> bool: return unit.gap_to(a) < unit.gap_to(b))
+	for t: UnitState in order:
+		var dir: Vector2 = (t.centre() - unit.centre()).normalized()
+		var picked: Array[UnitState] = [t]
+		for dist in range(max_distance, 0, -1):
+			var moved: Array[Vector2] = []
+			for m in unit.models:
+				moved.append(m["pos"] + dir * float(dist))
+			if check_move(unit, moved, picked, max_distance, all_units, board, terrain)["ok"]:
+				return moved
+	var empty: Array[Vector2] = []
+	return empty
+
+
 ## Apply a legal charge move: moves the models and marks the unit as having charged, which
 ## makes it a Fights First unit until the end of the turn.
 static func apply_move(unit: UnitState, new_positions: Array[Vector2]) -> void:

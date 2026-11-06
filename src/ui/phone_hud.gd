@@ -9,6 +9,7 @@ var _vp: Array[Label] = []
 var _round: Label
 var _phase: Label
 var _count: Label
+var _cp: Label
 
 
 func _init() -> void:
@@ -40,6 +41,11 @@ func _init() -> void:
 	_count.add_theme_color_override("font_color", UITokens.ON_ACTION)
 	row.add_child(_count)
 
+	_cp = Label.new()
+	_cp.theme_type_variation = "LabelSmallStat"
+	_cp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(_cp)
+
 	var tools := HBoxContainer.new()
 	add_child(tools)
 	tools.add_child(_tool("panel", "tip.panel", func() -> void: info_pressed.emit()))
@@ -59,9 +65,11 @@ func _tool(icon_name: String, tip_key: String, handler: Callable) -> Button:
 	return b
 
 
-func refresh(round_no: int, total_rounds: int, phase: String, vp: Array, over: bool = false) -> void:
+func refresh(round_no: int, total_rounds: int, phase: String, vp: Array, cp: Array, over: bool = false) -> void:
 	_round.text = UIText.t("hud.round_short", [round_no, total_rounds])
 	_phase.text = UIText.t("hud.battle_over") if over else UIText.t("rail." + phase)
-	_count.text = "" if over else "%d/%d" % [TopBar.PHASES.find(phase) + 1, TopBar.PHASES.size()]
+	var step: int = TopBar.PHASES.find(phase) + 1
+	_count.text = "" if over or step == 0 else "%d/%d" % [step, TopBar.PHASES.size()]
+	_cp.text = UIText.t("hud.cp_both", [int(cp[0]), int(cp[1])])
 	_vp[0].text = str(vp[0])
 	_vp[1].text = str(vp[1])

@@ -3,7 +3,7 @@ extends DialogBox
 ## A short guide in our own words: how a turn runs, the tools, and the controls.
 
 const WIDTH := 600.0
-const SECTIONS: Array[String] = ["aim", "turn", "phases", "tools", "controls"]
+const SECTIONS: Array[String] = ["aim", "deploy", "turn", "phases", "stratagems", "tools", "controls"]
 
 var close_button: Button
 

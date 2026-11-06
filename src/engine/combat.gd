@@ -14,21 +14,27 @@ extends RefCounted
 ## across several target units. [ONE SHOT] is tracked per unit, not per model.
 
 const LONE_OPERATIVE_RANGE := 12.0  ## not targetable from further away
+const SNAP_RANGE := 24.0  ## snap shooting reaches this far (15.09)
 
 
 ## What shooting [param target] would involve: one entry per ranged weapon that has a model
 ## in range with the target visible, each {"weapon", "ctx", "models"}.
 ## [param ctx] may hold "terrain" (Array of TerrainArea), "turn_no" (int, for hidden),
 ## "cover" (bool, overrides the automatic check) and "hit_mod" / "wound_mod" (int).
+## With "snap" (bool) this is snap shooting (15.09): within 24", only seen targets, 6s to hit.
 static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array, ctx: Dictionary = {}) -> Array[Dictionary]:
 	var plan: Array[Dictionary] = []
 	if target.is_destroyed():
 		return plan
 	var longest_shot: float = LONE_OPERATIVE_RANGE if target.abilities.has("LONE OPERATIVE") else INF
+	var snap: bool = bool(ctx.get("snap", false))
+	if snap:
+		longest_shot = minf(longest_shot, SNAP_RANGE)
 	var terrain: Array = ctx.get("terrain", [])
 	var turn_no: int = int(ctx.get("turn_no", 0))
 	var stationary: bool = attacker.max_model_move <= 3.0 and not attacker.advanced
 	var unengaged: bool = not UnitRules.engaged(attacker, all_units)
+	var heavy_ok: bool = stationary and unengaged and not snap
 	var spotted: bool = false
 	var spotted_checked: bool = false
 	for w in attacker.weapons:
@@ -38,7 +44,7 @@ static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array,
 			continue
 		if w.has("ONE SHOT") and attacker.one_shot_used.has(w.weapon_name):
 			continue
-		var indirect_ok: bool = w.has("INDIRECT FIRE") and not attacker.advanced and unengaged
+		var indirect_ok: bool = w.has("INDIRECT FIRE") and not attacker.advanced and unengaged and not snap
 		# Two groups of models: those that see the target (normal) and those that fire blind.
 		var groups: Dictionary = {
 			"seen": {"n": 0, "half": 0, "pos": Vector2.ZERO, "gap": INF},
@@ -80,7 +86,9 @@ static func shoot_plan(attacker: UnitState, target: UnitState, all_units: Array,
 				c["cover"] = true
 			c["models_firing"] = g["n"]
 			c["half_range"] = g["half"] == g["n"]
-			c["heavy_bonus"] = stationary and unengaged
+			c["heavy_bonus"] = heavy_ok
+			if snap:
+				c["indirect_min"] = 6
 			plan.append({"weapon": w, "ctx": c, "models": g["n"]})
 	return plan
 

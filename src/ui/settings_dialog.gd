@@ -130,6 +130,7 @@ func _build_gameplay(page: VBoxContainer) -> void:
 		row.add_child(b)
 	page.add_child(row)
 	page.add_child(_check("settings.confirm_end_phase", "confirm_end_phase"))
+	page.add_child(_check("settings.stratagem_prompts", "stratagem_prompts"))
 	page.add_child(_check("settings.reanimate_models", "reanimate_models"))
 
 

@@ -29,6 +29,8 @@ var last_position: Vector2 = Vector2.ZERO  ## where the most recent model was de
 var advanced: bool = false
 var fell_back: bool = false
 var charged: bool = false
+## Counteroffensive: a Fights First unit until the end of the phase, whatever its abilities.
+var fights_first_now: bool = false
 var last_fired_turn: int = -10  ## player-turn number of the last ranged attack, for hidden (13.09)
 var max_model_move: float = 0.0  ## furthest any model moved this turn, for [HEAVY]
 ## Names of [ONE SHOT] weapons already fired this battle (24.26). Tracked per unit, not per model.
@@ -89,7 +91,7 @@ func to_save() -> Dictionary:
 		"weapons": weapon_rows, "starting_strength": starting_strength, "battle_shocked": battle_shocked,
 		"abilities": abilities.duplicate(), "faction_abilities": faction_abilities.duplicate(),
 		"deadly_demise": deadly_demise, "last_position": [last_position.x, last_position.y],
-		"advanced": advanced, "fell_back": fell_back, "charged": charged, "last_fired_turn": last_fired_turn,
+		"advanced": advanced, "fell_back": fell_back, "charged": charged, "fights_first_now": fights_first_now, "last_fired_turn": last_fired_turn,
 		"max_model_move": max_model_move, "one_shot_used": one_shot_used.duplicate(), "models": model_rows}
 
 
@@ -118,6 +120,7 @@ static func from_save(d: Dictionary) -> UnitState:
 	u.advanced = bool(d["advanced"])
 	u.fell_back = bool(d["fell_back"])
 	u.charged = bool(d["charged"])
+	u.fights_first_now = bool(d.get("fights_first_now", false))
 	u.last_fired_turn = int(d["last_fired_turn"])
 	u.max_model_move = float(d["max_model_move"])
 	u.one_shot_used.assign(d["one_shot_used"])
@@ -165,12 +168,13 @@ func reset_turn_flags() -> void:
 	advanced = false
 	fell_back = false
 	charged = false
+	fights_first_now = false
 	max_model_move = 0.0
 
 
 ## A unit is a Fights First unit if it has the ability or made a charge move this turn (11.04).
 func is_fights_first() -> bool:
-	return charged or abilities.has("FIGHTS FIRST")
+	return charged or fights_first_now or abilities.has("FIGHTS FIRST")
 
 
 ## Smallest gap between the edges of this unit's models and another unit's models.

@@ -14,6 +14,7 @@ var _active_player: int = 0
 var _in_fights_first: bool = true
 var _selected: Array = []
 var _engaged_at_start: Array = []
+var _forced: UnitState                  # must be picked next (Counteroffensive)
 
 
 ## Start the step. Units engaged now count as "was engaged at the start of this step".
@@ -36,7 +37,8 @@ func to_save() -> Dictionary:
 	return {"finished": finished, "chooser": chooser, "active_player": _active_player,
 		"in_fights_first": _in_fights_first,
 		"selected": _selected.map(func(u: UnitState) -> String: return u.id),
-		"engaged_at_start": _engaged_at_start.map(func(u: UnitState) -> String: return u.id)}
+		"engaged_at_start": _engaged_at_start.map(func(u: UnitState) -> String: return u.id),
+		"forced": "" if _forced == null else _forced.id}
 
 
 ## Rebuild from [method to_save] against the battle's [param units].
@@ -52,12 +54,32 @@ static func from_save(d: Dictionary, units: Array) -> FightSequencer:
 			out._selected.append(u)
 		if (d["engaged_at_start"] as Array).has(u.id):
 			out._engaged_at_start.append(u)
+		if str(d.get("forced", "")) == u.id:
+			out._forced = u
 	return out
 
 
 ## Units the current chooser may select right now.
 func options() -> Array[UnitState]:
+	if _forced_is_live():
+		return [_forced]
 	return _eligible(chooser, _in_fights_first)
+
+
+## Every unit of [param player] that could still fight this step, Fights First or not.
+func candidates(player: int) -> Array[UnitState]:
+	return _eligible(player, false)
+
+
+## Make [param unit] the next unit selected, by its own player, whatever the order would be.
+func force_next(unit: UnitState) -> void:
+	_forced = unit
+	chooser = unit.owner
+	finished = false
+
+
+func _forced_is_live() -> bool:
+	return _forced != null and not _forced.is_destroyed() and not _selected.has(_forced)
 
 
 func in_fights_first_step() -> bool:
@@ -69,6 +91,7 @@ func select(unit: UnitState) -> bool:
 	if finished or not options().has(unit):
 		return false
 	_selected.append(unit)
+	_forced = null
 	chooser = 1 - chooser
 	if not _in_fights_first and _any_eligible(true):
 		_in_fights_first = true
@@ -100,6 +123,9 @@ func _any_eligible(fights_first_only: bool) -> bool:
 
 ## Apply the "if not possible" rules until the chooser has an option or the step ends.
 func _settle() -> void:
+	if _forced_is_live():
+		return
+	_forced = null
 	for guard in range(4):
 		if not _eligible(chooser, _in_fights_first).is_empty():
 			return

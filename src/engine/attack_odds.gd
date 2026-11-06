@@ -16,7 +16,7 @@ static func compute(weapon: Weapon, target: UnitState, ctx: Dictionary = {}) -> 
 	var skill: int = numbers["skill"]
 	var hit_mod: int = numbers["hit_mod"]
 	var indirect_min: int = int(ctx.get("indirect_min", 0))
-	var torrent: bool = weapon.has("TORRENT")
+	var torrent: bool = weapon.has("TORRENT") and not bool(ctx.get("snap", false))
 	var p_hit: float = 1.0
 	var p_crit_hit: float = 0.0
 	if not torrent:

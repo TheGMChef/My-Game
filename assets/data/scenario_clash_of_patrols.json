@@ -83,6 +83,8 @@
     "name": "Retrieve Intelligence",
     "summary": "From round 2, each Command phase the active player may pick one objective they control, once per objective per battle; if their Warlord is on the table they gain 1 CP."
   },
+  "banned_stratagems": [],
+  "banned_stratagems_note": "The 11th edition Combat Patrol mission bans crushing_impact, explosives and rapid_ingress. Empty here: see design/rules/stratagems.md.",
   "reserves": {
     "cannot_arrive_in_round": 1,
     "destroyed_if_not_arrived_after_round": 3

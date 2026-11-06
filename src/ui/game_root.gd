@@ -10,7 +10,12 @@ const HUMAN := 0
 const COMPACT_BELOW := 960.0
 const PHONE_BELOW := 520.0
 const TINY_BELOW := 560.0
+const RUN_GUARD := 500    # steps of AI playback before the loop gives the screen back
 const PHASES: Array[String] = ["command", "movement", "shooting", "charge", "fight"]
+
+## The game is waiting for an answer on the stratagem prompt.
+signal prompt_opened
+signal _prompt_closed
 
 var battle: Battle
 var settings := UISettings.new()
@@ -36,6 +41,9 @@ var _weapon_rings: Dictionary = {}       # unit id -> indices of weapons with a 
 var _pause_pending: bool = false         # the menu was asked for while something was playing
 var _playing: int = 0                    # event playbacks in progress
 var _run_id: int = 0                     # changes when a battle is left, so a running AI loop stops
+var _deploy_base: Array[Vector2] = []    # where the unit being placed sits, before any drag
+var _prompt_open: bool = false
+var _prompt_options: Array[Dictionary] = []    # one for each row of the open prompt
 
 # Nodes
 var _top_bar: TopBar
@@ -50,6 +58,8 @@ var _over_title: Label
 var _over_vp: Array[Label] = []
 var _play_again: Button
 var _toolbar: BoardToolbar
+var _tray: DeployTray
+var _prompt: ReactionPrompt
 var _ui_root: VBoxContainer
 var _body: BoxContainer
 var _title: TitleScreen
@@ -58,6 +68,8 @@ var _portrait: bool = false
 var _phone: bool = false
 var skip_roster: bool = false    ## tests and tools set this to go straight to the placeholder battle
 var skip_title: bool = false     ## tools set this to open on the roster
+## skip_roster games start on round 1 with no prompts. This keeps deployment and prompts in them.
+var full_flow: bool = false
 var battle_seed: int = -1         ## tools set this to repeat a game exactly
 var armies_override: Array = []   ## tools set this to play skip_roster games with other armies
 ## False for tests and tools: no settings or save file is read or written. skip_roster and
@@ -129,7 +141,8 @@ func _resume_battle(saved: Battle, armies: Array) -> void:
 	_armies_in_play = armies
 	battle = saved
 	_adopt_battle()
-	_begun_key = _turn_key()
+	if not battle.deployment_active:
+		_begun_key = _turn_key()
 	_enter_battle()
 
 
@@ -164,6 +177,15 @@ func _enter_battle() -> void:
 	_consume_events()
 	_refresh()
 	board.grab_focus()
+	_start_playing()
+
+
+## Hand over to whoever acts first: the AI may have a unit to place, or the first turn.
+func _start_playing() -> void:
+	if battle.deployment_active:
+		_run_ai_deployment()
+	elif not battle.pending.is_empty() or battle.active_player() != HUMAN:
+		_run_until_human_input()
 
 
 func _parse_args() -> Dictionary:
@@ -184,18 +206,25 @@ func _load_battle(armies: Array, seed_value: int) -> void:
 	var sc: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/scenario_clash_of_patrols.json"))
 	battle = Battle.new(sc, armies, seed_value)
 	battle.ai_sides = [false, true]
+	if full_flow or not (skip_roster or _args.has("quick")):
+		battle.start_deployment()
 	_adopt_battle()
 
 
 ## Reset everything the interface keeps about a battle for a new or resumed one.
 func _adopt_battle() -> void:
 	battle.reanimate_models = settings.reanimate_models
+	_apply_prompt_setting()
 	_names = battle.unit_names.duplicate()
 	_event_cursor = 0
 	_log_lines.clear()
 	_game_over_shown = false
 	_begun_key = ""
 	_weapon_rings.clear()
+
+
+func _apply_prompt_setting() -> void:
+	battle.prompt_sides[HUMAN] = settings.stratagem_prompts and (full_flow or not skip_roster)
 
 
 # ---------------------------------------------------------------- input actions
@@ -243,6 +272,14 @@ func _pad_axis(axis: JoyAxis, value: float) -> InputEventJoypadMotion:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if battle == null or board == null or _dialog_open():
+		return
+	if _prompt_open:
+		if event.is_action_pressed("cancel_order"):
+			_on_prompt_pass()
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("confirm_order"):
+			_on_prompt_use(0)
+			get_viewport().set_input_as_handled()
 		return
 	if _busy:
 		if event.is_action_pressed("cancel_order") or event.is_action_pressed("confirm_order"):
@@ -315,6 +352,15 @@ func _build_ui() -> void:
 	_toolbar.fit_pressed.connect(func() -> void: board.reset_view())
 	board_holder.add_child(_toolbar)
 	board.measure_changed.connect(_show_ruler_state)
+	_prompt = ReactionPrompt.new()
+	_prompt.use_pressed.connect(_on_prompt_use)
+	_prompt.pass_pressed.connect(_on_prompt_pass)
+	board_holder.add_child(_prompt)
+	board_holder.resized.connect(_prompt.refit)
+
+	_tray = DeployTray.new()
+	_tray.picked.connect(_on_tray_pressed)
+	_board_col.add_child(_tray)
 
 	_action_bar = ActionBar.new()
 	_action_bar.next_pressed.connect(_request_next)
@@ -336,6 +382,7 @@ func _build_ui() -> void:
 	_side.rules_pressed.connect(_open_rules)
 	_side.unit_row_pressed.connect(_on_unit_row_pressed)
 	_side.weapon_pressed.connect(_on_weapon_pressed)
+	_side.stratagem_pressed.connect(_on_stratagem_pressed)
 	_body.add_child(_side)
 
 	_over_panel = _build_over_panel()
@@ -446,7 +493,7 @@ func _ask(title_key: String, body: String, yes_key: String, on_yes: Callable) ->
 func _request_pause() -> void:
 	if battle == null or _dialog_open():
 		return
-	if _busy or _playing > 0:
+	if (_busy or _playing > 0) and not _prompt_open:
 		_pause_pending = true
 		_skip = true
 		return
@@ -492,6 +539,7 @@ func _pause_point() -> void:
 ## Back to no battle at all. The autosave stays, so Continue can pick it up.
 func _leave_battle() -> void:
 	_run_id += 1
+	_drop_prompt()
 	for n: Node in [_ui_root, _over_panel]:
 		if n != null:
 			n.queue_free()
@@ -509,6 +557,7 @@ func _leave_battle() -> void:
 func _settings_changed() -> void:
 	if battle != null:
 		battle.reanimate_models = settings.reanimate_models
+		_apply_prompt_setting()
 		board.settings = settings
 	_apply_scale()
 
@@ -583,7 +632,7 @@ func _own_active() -> bool:
 
 
 func _on_unit_tapped(u: UnitState) -> void:
-	if _busy:
+	if _busy or _placing():
 		return
 	var phase: String = battle.phase()
 	if u.owner == HUMAN:
@@ -597,8 +646,11 @@ func _on_unit_tapped(u: UnitState) -> void:
 	_refresh()
 
 
-func _on_empty_tapped(_world: Vector2) -> void:
-	_clear_selection()
+func _on_empty_tapped(world: Vector2) -> void:
+	if _placing():
+		_shift_placing(world - _middle_of(_deploy_base))
+	else:
+		_clear_selection()
 	_refresh()
 
 
@@ -623,6 +675,9 @@ func _clear_selection() -> void:
 func _on_unit_row_pressed(unit_id: String) -> void:
 	var u: UnitState = battle.unit_by_id(unit_id)
 	if u == null or _busy:
+		return
+	if battle.undeployed.has(u) and u.owner == HUMAN:
+		_on_tray_pressed(unit_id)
 		return
 	_select(u)
 	_refresh.call_deferred()
@@ -661,11 +716,14 @@ func _on_enemy_tapped(e: UnitState) -> void:
 
 
 func _cycle_unit(step: int) -> void:
-	var mine: Array = battle.living(HUMAN)
+	var mine: Array = battle.undeployed_of(HUMAN) if battle.deployment_active else battle.living(HUMAN)
 	if mine.is_empty():
 		return
 	var i: int = mine.find(_selected)
 	i = (i + step + mine.size()) % mine.size() if i >= 0 else 0
+	if battle.deployment_active:
+		_on_tray_pressed((mine[i] as UnitState).id)
+		return
 	_select(mine[i])
 	_refresh()
 
@@ -683,6 +741,8 @@ func _on_drag_cancelled() -> void:
 
 
 func _on_drag_ended(_u: UnitState, _delta_in: Vector2) -> void:
+	if _placing():
+		_shift_placing(_delta)
 	_refresh()
 
 
@@ -708,11 +768,15 @@ func _allowed_distance(u: UnitState) -> float:
 
 
 func _clamped(u: UnitState, d: Vector2) -> Vector2:
+	if battle.deployment_active:
+		return d
 	var limit: float = _allowed_distance(u)
 	return d.limit_length(limit)
 
 
 func _can_drag() -> bool:
+	if battle.deployment_active:
+		return _placing()
 	if _selected == null or _selected.owner != HUMAN or not _own_stage_active():
 		return false
 	match battle.phase():
@@ -738,6 +802,10 @@ func _ghost_positions() -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	if _selected == null:
 		return out
+	if _placing():
+		for p in _deploy_base:
+			out.append(p + _delta)
+		return out
 	for m in _selected.models:
 		out.append(m["pos"] + _delta)
 	return out
@@ -745,6 +813,9 @@ func _ghost_positions() -> Array[Vector2]:
 
 func _update_ghost_verdict() -> void:
 	_verdict = {}
+	if _placing():
+		_verdict = battle.preview_deploy(_selected, _ghost_positions())
+		return
 	if _selected == null or _delta.length() < 0.01:
 		return
 	var ghost: Array[Vector2] = _ghost_positions()
@@ -767,6 +838,12 @@ func _update_ghost_verdict() -> void:
 # ---------------------------------------------------------------- buttons
 
 func _on_confirm_pressed() -> void:
+	if battle.deployment_active:
+		if battle.deployment_ready():
+			await _on_start_battle_pressed()
+		elif _placing():
+			await _on_place_pressed()
+		return
 	if _selected == null or not _own_stage_active():
 		return
 	var ghost: Array[Vector2] = _ghost_positions()
@@ -937,6 +1014,9 @@ func _on_skip_fight_pressed() -> void:
 func _request_next() -> void:
 	if _busy or battle.is_over():
 		return
+	if battle.deployment_active:
+		_on_auto_deploy_pressed()
+		return
 	if battle.active_player() != HUMAN and not _human_can_act_in_ai_turn():
 		return
 	var left: int = _units_left_to_act()
@@ -970,13 +1050,15 @@ func _can_still_act(u: UnitState) -> bool:
 
 
 func _on_next_pressed() -> void:
-	if _busy or battle.is_over():
+	if _busy or battle.is_over() or battle.deployment_active:
 		return
 	if battle.active_player() != HUMAN and not _human_can_act_in_ai_turn():
 		return
 	var r: Dictionary = battle.next_phase()
 	_verdict = r
 	_clear_selection()
+	if battle.events.slice(_event_cursor).any(func(e: Dictionary) -> bool: return e["type"] == "stratagem"):
+		await _play_new_events()    # the AI answered: show it rather than only log it
 	_consume_events()
 	if r["ok"]:
 		await _after_human_phase_change()
@@ -995,6 +1077,7 @@ func _continue_after_human_action() -> void:
 func _restart() -> void:
 	_over_panel.close()
 	_run_id += 1
+	_drop_prompt()
 	_busy = false
 	_skip = false
 	_action_bar.set_busy(false)
@@ -1006,6 +1089,228 @@ func _restart() -> void:
 	_consume_events()
 	_refresh()
 	board.grab_focus()
+	_start_playing()
+
+
+# ---------------------------------------------------------------- deployment
+
+## A unit of the human's is on its way to the board. Presentation only until it is placed.
+func _placing() -> bool:
+	return battle != null and battle.deployment_active and _selected != null and _selected.owner == HUMAN \
+			and battle.undeployed.has(_selected)
+
+
+## Pick up a unit from the tray: it starts at a legal spot if there is one, ready to be dragged.
+func _on_tray_pressed(unit_id: String) -> void:
+	var u: UnitState = battle.unit_by_id(unit_id)
+	if _busy or u == null or battle.deploy_side() != HUMAN or not battle.undeployed.has(u):
+		return
+	_select(u)
+	_deploy_base = SimpleAI.deployment_positions(battle, u)
+	if _deploy_base.is_empty():
+		_deploy_base = battle.formation(u, battle.zone_rect(HUMAN).get_center())
+	_update_ghost_verdict()
+	_refresh()
+
+
+func _shift_placing(by: Vector2) -> void:
+	for i in range(_deploy_base.size()):
+		_deploy_base[i] += by
+	_delta = Vector2.ZERO
+	_update_ghost_verdict()
+
+
+func _middle_of(points: Array[Vector2]) -> Vector2:
+	var sum := Vector2.ZERO
+	for p in points:
+		sum += p
+	return sum / maxf(1.0, float(points.size()))
+
+
+func _on_place_pressed() -> void:
+	if not _placing():
+		return
+	var r: Dictionary = battle.cmd_deploy(_selected, _ghost_positions())
+	_verdict = r
+	if r["ok"]:
+		_clear_selection()
+		_consume_events()
+		_autosave()
+		await _run_ai_deployment()
+	_refresh()
+
+
+func _on_auto_deploy_pressed() -> void:
+	battle.cmd_auto_deploy()
+	_clear_selection()
+	_consume_events()
+	_autosave()
+	_refresh()
+
+
+func _on_start_battle_pressed() -> void:
+	if battle.cmd_finish_deployment()["ok"]:
+		_consume_events()
+		await _run_until_human_input()
+	_refresh()
+
+
+## Let the AI place its units until it is the human's turn to place one.
+func _run_ai_deployment() -> void:
+	var run: int = _run_id
+	_set_busy(true)
+	while battle.ai_deploy_step():
+		await _play_new_events()
+		if run != _run_id:
+			return
+	_set_busy(false)
+
+
+# ---------------------------------------------------------------- stratagems
+
+## True while the game is stopped on a stratagem question.
+func prompt_open() -> bool:
+	return _prompt_open
+
+
+## The Stratagems tab's view of the moment, playable ones first.
+func _stratagem_view() -> Dictionary:
+	var live: Array = []
+	var greyed: Array = []
+	for row in battle.stratagem_overview(HUMAN):
+		var id: String = row["id"]
+		var pick: Dictionary = _preferred_option(row["options"])
+		var line: Dictionary = {"id": id, "name": UIText.t("strat.%s.name" % id), "effect": UIText.t("strat.%s.effect" % id),
+			"cost": UIText.t("strat.cost", [int(row["cost"])]), "button": _option_button(pick),
+			"reason": "" if str(row["reason"]) == "" else UIText.t(str(row["reason"]))}
+		(greyed if pick.is_empty() else live).append(line)
+	return {"cp": UIText.t("strat.cp_line", [battle.command_points(HUMAN), battle.command_points(1 - HUMAN)]), "rows": live + greyed}
+
+
+## The option that fits the current selection, or else the first.
+func _preferred_option(options: Array) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score: int = -1
+	for o: Dictionary in options:
+		var score: int = 0
+		if _selected != null and o["unit"] == _selected.id:
+			score += 2
+		if _target != null and o["target"] == _target.id:
+			score += 1
+		if score > best_score:
+			best_score = score
+			best = o
+	return best
+
+
+func _option_text(o: Dictionary) -> String:
+	var who: String = str(_names.get(o["unit"], ""))
+	if str(o["target"]) != "":
+		return UIText.t("strat.use_target", [who, str(_names.get(o["target"], ""))])
+	if str(o["mode"]) != "":
+		return "%s: %s" % [who, UIText.t("strat.mode." + str(o["mode"]))]
+	return who
+
+
+func _option_button(o: Dictionary) -> String:
+	return "" if o.is_empty() else UIText.t("strat.use_on", [_option_text(o)])
+
+
+func _on_stratagem_pressed(id: String) -> void:
+	if battle == null or (_busy and not _prompt_open):
+		return
+	var options: Array = battle.stratagem_options(HUMAN).filter(func(o: Dictionary) -> bool: return o["id"] == id)
+	if options.is_empty():
+		return
+	var pick: Dictionary = _preferred_option(options)
+	var r: Dictionary = battle.cmd_stratagem(HUMAN, id, pick)
+	if not r["ok"]:
+		_verdict = r
+		_refresh()
+		return
+	_verdict = {}
+	_close_prompt()
+	var charge: Dictionary = {} if _selected == null else battle.charge_state(_selected)
+	if id == "command_reroll" and charge.has("targets"):
+		_charge_targets.assign(charge["targets"])
+	await _play_new_events()
+	if battle != null:
+		_update_ghost_verdict()
+		_refresh()
+
+
+## Rows for the prompt: one for each unit and mode. Options run nearest enemy first, so a unit's
+## first option is its best target.
+func _prompt_rows() -> Array[Dictionary]:
+	var seen: Dictionary = {}
+	var out: Array[Dictionary] = []
+	for o in battle.stratagem_options(HUMAN):
+		var key: String = "%s/%s/%s" % [o["id"], o["unit"], o["mode"]]
+		if not seen.has(key):
+			seen[key] = true
+			out.append(o)
+	return out
+
+
+## Stop for a stratagem question until it is answered. The AI loop waits here. Leaving the battle
+## also ends the wait, and an empty question passes by itself, so this can't hold a game up.
+func _answer_pending() -> void:
+	_prompt_options = _prompt_rows()
+	if _prompt_options.is_empty():
+		battle.cmd_pass(HUMAN)
+		return
+	var run: int = _run_id
+	_autosave()
+	_prompt_open = true
+	_set_busy(true)
+	var first: Dictionary = _prompt_options[0]
+	var id: String = first["id"]
+	var rows: Array = []
+	for o in _prompt_options:
+		rows.append(_option_button(o) if int(o["cost"]) == int(first["cost"]) else UIText.t("prompt.title", [_option_button(o), int(o["cost"])]))
+	_prompt.ask({"title": UIText.t("prompt.title", [UIText.t("strat.%s.name" % id), int(first["cost"])]),
+		"effect": UIText.t("strat.%s.effect" % id), "cp": UIText.t("prompt.cp", [battle.command_points(HUMAN)]), "rows": rows})
+	_mark_prompt_target(first)
+	prompt_opened.emit()
+	await _prompt_closed
+	if run == _run_id:
+		board.grab_focus()
+
+
+func _mark_prompt_target(o: Dictionary) -> void:
+	var u: UnitState = battle.unit_by_id(str(o["unit"]))
+	var foe: UnitState = battle.unit_by_id(str(o["target"]))
+	board.selected = u
+	board.highlights = {} if foe == null else {foe: BoardView.MARK_TARGET}
+	board.queue_redraw()
+
+
+func _on_prompt_use(index: int) -> void:
+	if not _prompt_open or index >= _prompt_options.size():
+		return
+	var o: Dictionary = _prompt_options[index]
+	battle.cmd_stratagem(HUMAN, str(o["id"]), o)
+	_close_prompt()
+
+
+func _on_prompt_pass() -> void:
+	if not _prompt_open:
+		return
+	battle.cmd_pass(HUMAN)
+	_close_prompt()
+
+
+func _close_prompt() -> void:
+	if not _prompt_open:
+		return
+	_prompt_open = false
+	_prompt.close()
+	_prompt_closed.emit()
+
+
+## The battle is going away: let go of anything waiting on the prompt.
+func _drop_prompt() -> void:
+	_close_prompt()
 
 
 # ---------------------------------------------------------------- AI turns and event playback
@@ -1028,15 +1333,24 @@ func _ai_has_fight_pick() -> bool:
 func _run_until_human_input() -> void:
 	var guard: int = 0
 	var run: int = _run_id
-	while guard < 200 and not battle.is_over():
+	while guard < RUN_GUARD and not battle.is_over():
 		guard += 1
 		await _pause_point()
 		if run != _run_id:
 			return
+		if not battle.pending.is_empty():
+			await _answer_pending()
+			if run != _run_id:
+				return
+			await _play_new_events()
+			_refresh_board_only()
+			continue
 		if battle.active_player() == HUMAN and not _ai_has_fight_pick():
 			if battle.phase() == "command":
 				_begin_turn_once()
 				_consume_events()
+				if not battle.pending.is_empty():
+					continue
 			_set_busy(false)
 			return
 		# AI's turn
@@ -1083,7 +1397,7 @@ func _run_until_human_input() -> void:
 ## Resolve the command phase once per player turn (the battle does not do it on its own).
 func _begin_turn_once() -> void:
 	var key: String = _turn_key()
-	if key == _begun_key or battle.is_over():
+	if key == _begun_key or battle.is_over() or battle.deployment_active:
 		return
 	_begun_key = key
 	battle.begin_turn()
@@ -1119,7 +1433,7 @@ func _set_busy(on: bool) -> void:
 	_skip = false
 	if _action_bar == null or battle == null:
 		return
-	_action_bar.set_busy(on)
+	_action_bar.set_busy(on and not _prompt_open)
 	_refresh()
 	if not on and _pause_pending:
 		_pause_pending = false
@@ -1182,7 +1496,7 @@ func _animate(e: Dictionary) -> void:
 				board.flash(a.centre(), d.centre(), UITokens.SIDE_COLOURS[a.owner], 0.0 if instant else 0.7 * pace)
 			if not instant:
 				await get_tree().create_timer(0.55 * pace).timeout
-		"turn_start", "score", "charge_roll", "advance_roll":
+		"turn_start", "score", "charge_roll", "advance_roll", "deploy", "stratagem":
 			if not instant:
 				await get_tree().create_timer(0.25 * pace).timeout
 
@@ -1205,15 +1519,27 @@ func _log_event(e: Dictionary) -> void:
 		"hold":
 			line = UIText.t("log.hold", [side_word, who])
 		"advance_roll":
-			line = UIText.t("log.advance_roll", [who, int(e["roll"])])
+			line = UIText.t("log.reroll_advance" if e.has("reroll") else "log.advance_roll", [who, int(e["roll"])])
 		"shoot":
-			line = UIText.t("log.shoot", [side_word, who, str(_names.get(e["target"], "?")), _damage_of(e), _models_of(e)])
+			line = UIText.t("log.shoot_snap" if e.has("snap") else "log.shoot", [side_word, who, str(_names.get(e["target"], "?")), _damage_of(e), _models_of(e)])
 		"fight":
 			line = UIText.t("log.fight", [side_word, who, str(_names.get(e["target"], "?")), _damage_of(e), _models_of(e)])
 		"fight_skipped":
 			line = UIText.t("log.fight_skipped", [who])
 		"charge_roll":
-			line = UIText.t("log.charge_roll", [who, int(e["roll"])])
+			line = UIText.t("log.reroll_charge" if e.has("reroll") else "log.charge_roll", [who, int(e["roll"])])
+		"deploy":
+			line = UIText.t("log.deploy_forced" if bool(e["forced"]) else "log.deploy", [side_word, who])
+		"first_turn":
+			line = UIText.t("log.first_turn", [int(e["rolls"][0]), int(e["rolls"][1]), UIText.t("log.first_turn.you" if int(e["side"]) == HUMAN else "log.first_turn.ai")])
+		"stratagem":
+			line = _stratagem_line(e, side_word)
+		"explosives":
+			line = UIText.t("log.explosives", [str(_names.get(e["target"], "?")), int(e["wounds"])])
+		"crushing_impact":
+			line = UIText.t("log.crushing_impact", [who, int(e["taken"]), str(_names.get(e["target"], "?")), int(e["dealt"])])
+		"shock_reroll":
+			line = UIText.t("log.shock_reroll", [who, UIText.t("log.shock_reroll.passed" if bool(e["passed"]) else "log.shock_reroll.failed")])
 		"charge_move":
 			line = UIText.t("log.charge_move", [who])
 		"charge_failed":
@@ -1240,6 +1566,14 @@ func _log_event(e: Dictionary) -> void:
 		_log_lines.append({"text": line, "side": int(e["side"])})
 		if _log_lines.size() > 60:
 			_log_lines.pop_front()
+
+
+func _stratagem_line(e: Dictionary, side_word: String) -> String:
+	var strat: String = UIText.t("strat.%s.name" % str(e["id"]))
+	var who: String = str(_names.get(e["unit"], "?"))
+	if str(e["mode"]) == Stratagems.INTO_THE_FRAY:
+		return UIText.t("log.strat_mode", [side_word, strat, UIText.t("strat.mode.into_the_fray"), who])
+	return UIText.t("log.strat", [side_word, strat, who])
 
 
 func _damage_of(e: Dictionary) -> int:
@@ -1280,7 +1614,7 @@ func _refresh() -> void:
 	var round_no: int = battle.flow.round_no
 	var over: bool = battle.is_over()
 	_top_bar.refresh(round_no, total_rounds, battle.active_player() == HUMAN, battle.phase(), battle.flow.command_points, battle.vp, over)
-	_phone_hud.refresh(round_no, total_rounds, battle.phase(), battle.vp, over)
+	_phone_hud.refresh(round_no, total_rounds, battle.phase(), battle.vp, battle.flow.command_points, over)
 	_refresh_action_bar()
 	_refresh_side_panel()
 	_refresh_board_only()
@@ -1295,14 +1629,15 @@ func _refresh_board_only() -> void:
 	board.weapon_rings = _ring_radii(_selected)
 	var tools: Array[Rect2] = [_toolbar.get_rect()]
 	board.keep_clear = tools
-	board.ghost = _ghost_positions() if _delta.length() >= 0.01 else ([] as Array[Vector2])
+	board.ghost = _ghost_positions() if _delta.length() >= 0.01 or _placing() else ([] as Array[Vector2])
 	board.ghost_ok = bool(_verdict.get("ok", true))
 	board.drag_enabled = _can_drag()
+	board.deploy_drag = _placing()
 	board.ring_radius = 0.0
 	board.highlights = {}
 	board.los_line = []
 	board.acted = _acted_units()
-	if _selected != null and _selected.owner == HUMAN and _can_drag():
+	if _selected != null and _selected.owner == HUMAN and _can_drag() and not battle.deployment_active:
 		board.ring_centre = _selected.centre()
 		board.ring_radius = _allowed_distance(_selected)
 	if _selected != null and _selected.owner == HUMAN:
@@ -1314,7 +1649,7 @@ func _refresh_board_only() -> void:
 ## unit's centre sits one base radius further out than the weapon's range.
 func _ring_radii(u: UnitState) -> Array[float]:
 	var out: Array[float] = []
-	if u == null:
+	if u == null or battle.deployment_active:
 		return out
 	for i in _weapon_rings.get(u.id, []):
 		out.append((u.weapons[i] as Weapon).range_in + u.base_radius)
@@ -1359,12 +1694,16 @@ func _mark_highlights() -> void:
 
 func _refresh_action_bar() -> void:
 	var can_end: bool = battle.active_player() == HUMAN or _human_can_act_in_ai_turn()
+	if battle.deployment_active:
+		can_end = not battle.undeployed.is_empty()
 	_action_bar.show_actions(_action_specs(), _next_label(), _busy or battle.is_over() or not can_end)
 
 
 func _next_label() -> String:
 	if battle.is_over():
 		return UIText.t("next.over")
+	if battle.deployment_active:
+		return UIText.t("next.all_placed" if battle.undeployed.is_empty() else "next.auto_deploy")
 	if battle.phase() == "fight":
 		match battle.fight_stage:
 			"pile_in":
@@ -1381,6 +1720,8 @@ func _next_label() -> String:
 func _action_specs() -> Array[Dictionary]:
 	if _busy or battle.is_over():
 		return []
+	if battle.deployment_active:
+		return _deployment_actions()
 	if battle.can_unleash_shadow(HUMAN) and battle.active_player() == HUMAN:
 		return [_act("button.shadow", _on_shadow_pressed)]
 	if _selected == null or _selected.owner != HUMAN:
@@ -1397,6 +1738,39 @@ func _action_specs() -> Array[Dictionary]:
 		"fight":
 			return _fight_actions()
 	return []
+
+
+func _deployment_actions() -> Array[Dictionary]:
+	if battle.deployment_ready():
+		return [_hint("hint.deploy_ready"), _main("button.start_battle", _on_start_battle_pressed, false)]
+	if battle.deploy_side() != HUMAN:
+		return [_hint("hint.deploy_wait")]
+	if _placing():
+		var problem: String = "" if bool(_verdict.get("ok", true)) else str(_verdict.get("reason", ""))
+		var specs: Array[Dictionary] = [{"hint": UIText.t("hint.deploy_drag", [_selected.unit_name]) if problem == "" else problem[0].to_upper() + problem.substr(1)}]
+		if not _phone:    # the narrow column has no room, and tapping another unit changes the choice
+			specs.append(_act("button.cancel", _on_cancel_pressed))
+		specs.append(_main("button.place_unit", _on_place_pressed, not bool(_verdict.get("ok", false))))
+		return specs
+	var left: int = battle.undeployed_of(HUMAN).size()
+	return [{"hint": UIText.t("hint.deploy_count_one") if left == 1 else UIText.t("hint.deploy_count", [left])}]
+
+
+## Buttons for the stratagems the selected unit can use right now in these windows.
+func _strat_buttons(windows: Array) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var seen: Dictionary = {}
+	for o in battle.stratagem_options(HUMAN):
+		if seen.has(o["id"]) or not windows.has(o["window"]) or o["unit"] != _selected.id:
+			continue
+		if _target != null and str(o["target"]) != "" and o["target"] != _target.id:
+			continue
+		seen[o["id"]] = true
+		var id: String = o["id"]
+		var text: String = UIText.t("button.reroll", [int(o["cost"])]) if id == "command_reroll" \
+				else UIText.t("button.strat", [UIText.t("strat.%s.name" % id), int(o["cost"])])
+		out.append({"text": text, "handler": _on_stratagem_pressed.bind(id), "role": "normal"})
+	return out
 
 
 ## What to do next with nothing selected, as one line for this phase.
@@ -1448,6 +1822,8 @@ func _movement_actions() -> Array[Dictionary]:
 	else:
 		out.append(_mode("mode.normal", "normal"))
 		out.append(_mode("mode.advance", "advance"))
+		if _move_mode == "advance":
+			out.append_array(_strat_buttons([Stratagems.W_ADVANCE]))
 	if pending:
 		out.append(_act("button.cancel", _on_cancel_pressed))
 	else:
@@ -1465,6 +1841,7 @@ func _shooting_actions() -> Array[Dictionary]:
 	var specs: Array[Dictionary] = [_act("button.cancel", _on_cancel_pressed)]
 	if battle.can_observe(_selected) and battle.can_be_spotted(_target):
 		specs.append(_act("button.mark_spotted", _on_mark_spotted_pressed))
+	specs.append_array(_strat_buttons([Stratagems.W_SHOOTING]))
 	specs.append(_main("button.fire", _on_fire_pressed, battle.shoot_preview(_selected, _target).is_empty()))
 	return specs
 
@@ -1474,9 +1851,13 @@ func _charge_actions() -> Array[Dictionary]:
 	if cs.is_empty():
 		return [_main("button.declare_charge", _on_declare_pressed, not ChargeRules.eligible(_selected, battle.units)["ok"])]
 	if battle.charge_finished(_selected):
-		return [_hint("hint.charge_done")]
-	return [_act("button.suggest", _on_suggest_pressed), _act("button.give_up", _on_give_up_pressed),
-		_main("button.confirm_charge", _on_confirm_pressed, _no_valid_move())]
+		var done: Array[Dictionary] = [_hint("hint.charge_done")]
+		done.append_array(_strat_buttons([Stratagems.W_CHARGE, Stratagems.W_CHARGE_MOVED]))
+		return done
+	var specs: Array[Dictionary] = [_act("button.suggest", _on_suggest_pressed), _act("button.give_up", _on_give_up_pressed)]
+	specs.append_array(_strat_buttons([Stratagems.W_CHARGE]))
+	specs.append(_main("button.confirm_charge", _on_confirm_pressed, _no_valid_move()))
+	return specs
 
 
 func _fight_actions() -> Array[Dictionary]:
@@ -1491,9 +1872,13 @@ func _fight_actions() -> Array[Dictionary]:
 				return [_hint("hint.opponent_picks")]
 			if not battle.fight_options().has(_selected):
 				return [_hint("hint.cannot_pick_yet")]
+			var epic: Array[Dictionary] = _strat_buttons([Stratagems.W_FIGHT_SELECTED])
 			if _target == null:
-				return [_hint("hint.pick_fight_target"), _act("button.skip_fight", _on_skip_fight_pressed)]
-			return [_main("button.fight", _on_fight_pressed, battle.fight_preview(_selected, _target).is_empty())]
+				var waiting: Array[Dictionary] = [_hint("hint.pick_fight_target"), _act("button.skip_fight", _on_skip_fight_pressed)]
+				waiting.append_array(epic)
+				return waiting
+			epic.append(_main("button.fight", _on_fight_pressed, battle.fight_preview(_selected, _target).is_empty()))
+			return epic
 		"consolidate":
 			if not battle.can_consolidate(_selected):
 				return [_hint("hint.no_consolidate")]
@@ -1514,6 +1899,10 @@ func _refresh_side_panel() -> void:
 	_side.show_unit(_unit_view(_selected) if _selected != null else {})
 	_side.show_units(_units_view())
 	_side.show_log(_log_lines)
+	_side.show_stratagems(_stratagem_view())
+	_tray.visible = battle.deployment_active and not battle.undeployed_of(HUMAN).is_empty()
+	if _tray.visible:
+		_tray.show_units(_tray_view())
 
 
 ## The one short line on the Orders tab: the action bar's hint if it has one.
@@ -1530,11 +1919,18 @@ func _instruction(key: String) -> String:
 	return UIText.t("help.short." + key)
 
 
+func _tray_view() -> Array:
+	var rows: Array = []
+	for u: UnitState in battle.undeployed_of(HUMAN):
+		rows.append({"id": u.id, "name": u.unit_name, "count": str(u.model_count()), "selected": u == _selected})
+	return rows
+
+
 ## Rows for the Units tab: your units, then the enemy's.
 func _units_view() -> Array:
 	var rows: Array = []
 	for side: int in [HUMAN, 1 - HUMAN]:
-		for u: UnitState in battle.living(side):
+		for u: UnitState in battle.living(side) + battle.undeployed_of(side):
 			var marks: Array = []
 			if u.battle_shocked:
 				marks.append([UIText.t("chip.shocked_short"), UITokens.illegal(settings.colour_blind)])

@@ -1,22 +1,34 @@
 class_name PlaytestBot
 extends RefCounted
 ## Plays a full game as the human, through GameRoot's real handlers and the action bar's offered
-## buttons, so it hits the same dead ends a player would. [method play] reports how the game ended.
+## buttons, so it hits the same dead ends a player would. It deploys, answers stratagem prompts and
+## uses stratagems at random. [method play] reports how the game ended.
 ##
 ## Outcomes: "finished", "stall" (nothing changes however it plays), "dead_end" (nothing can be
 ## pressed), "two_mains" (two main actions on screen), "no_game_over" (the game ended with no
-## result shown), "vp_high" (a score above the handoff's sanity limit) and "step_limit".
+## result shown), "vp_high" (a score above the handoff's sanity limit), "step_limit",
+## "prompt_blocked" (a stratagem prompt held the game up) and "hang" (a step never came back).
 
 const STALL_LIMIT := 25
 const STEP_LIMIT := 5000
 const VP_LIMIT := 60
 const TRAIL_SIZE := 14
+const HANG_FRAMES := 600
+const BLOCKED_FRAMES := 60
+const USE_CHANCE := 0.5           ## how often a prompt gets Use rather than Pass
+const SPEND_CHANCE := 0.35        ## how often a playable stratagem gets used at a chance to act
+const AUTO_DEPLOY_CHANCE := 0.15
+const DEPLOY_SCATTER := 6.0
 
 var game: GameRoot
 var rng := RandomNumberGenerator.new()
 var trail: Array[String] = []
+## False leaves prompts unanswered, to prove a blocked game is reported rather than hanging.
+var answer_prompts: bool = true
+var prompts_seen: int = 0
 var _tried: Dictionary = {}          # units already handled in the current stage
 var _stage_key: String = ""
+var _stepping: bool = false
 
 
 func _init(target: GameRoot, seed_value: int) -> void:
@@ -32,7 +44,11 @@ func play() -> Dictionary:
 		steps += 1
 		if steps > STEP_LIMIT:
 			return _result("step_limit", steps)
-		await _step()
+		_stepping = true
+		_run_step()
+		var stuck: String = await _wait_for_step()
+		if stuck != "":
+			return _result(stuck, steps)
 		var problem: String = _screen_problem()
 		if problem != "":
 			return _result(problem, steps)
@@ -48,6 +64,41 @@ func play() -> Dictionary:
 	return _result("finished", steps)
 
 
+func _run_step() -> void:
+	await _step()
+	_stepping = false
+
+
+## Wait for the step, answering any prompt it runs into. Returns an outcome if it never finishes.
+## A step stuck behind a prompt is waiting on this loop, so it has to run alongside the step.
+func _wait_for_step() -> String:
+	var frames: int = 0
+	while _stepping or game.prompt_open() or game._busy:
+		if game.prompt_open():
+			if answer_prompts:
+				_answer_prompt()
+				frames = 0
+				continue
+			if frames >= BLOCKED_FRAMES:
+				return "prompt_blocked"
+		elif frames >= HANG_FRAMES:
+			return "hang"
+		frames += 1
+		await game.get_tree().process_frame
+	return ""
+
+
+func _answer_prompt() -> void:
+	prompts_seen += 1
+	var count: int = game._prompt_options.size()
+	if rng.randf() < USE_CHANCE:
+		_note("prompt: use")
+		game._on_prompt_use(rng.randi_range(0, count - 1))
+	else:
+		_note("prompt: pass")
+		game._on_prompt_pass()
+
+
 # ---------------------------------------------------------------- playing
 
 func _step() -> void:
@@ -56,8 +107,16 @@ func _step() -> void:
 	if key != _stage_key:
 		_stage_key = key
 		_tried.clear()
+	if game.prompt_open():
+		return
 	var phase: String = b.phase()
 	var acted: bool = false
+	if phase == "deployment":
+		await _deploy()
+		return
+	await _maybe_spend()
+	if b.is_over() or game.prompt_open():
+		return
 	if phase == "command" and _enabled("button.shadow"):
 		await _press("button.shadow")
 		acted = true
@@ -81,6 +140,44 @@ func _step() -> void:
 		await game._on_next_pressed()
 
 
+## Place the next unit by hand, usually scattered about a bit, or leave the rest to Auto-deploy.
+func _deploy() -> void:
+	if _enabled("button.start_battle"):
+		await _press("button.start_battle")
+		return
+	var waiting: Array = game.battle.undeployed_of(GameRoot.HUMAN)
+	if waiting.is_empty():
+		return
+	if rng.randf() < AUTO_DEPLOY_CHANCE:
+		_note("auto-deploy")
+		game._request_next()
+		return
+	var u: UnitState = waiting[rng.randi_range(0, waiting.size() - 1)]
+	_note("place %s" % u.unit_name)
+	game._on_tray_pressed(u.id)
+	var scatter: Vector2 = Vector2(rng.randf_range(-DEPLOY_SCATTER, DEPLOY_SCATTER), rng.randf_range(-DEPLOY_SCATTER, DEPLOY_SCATTER))
+	game._on_drag_moved(u, scatter)
+	game._on_drag_ended(u, scatter)
+	if not _enabled("button.place_unit"):
+		game._on_tray_pressed(u.id)     # back to the suggested spot
+	if _enabled("button.place_unit"):
+		await _press("button.place_unit")
+	else:
+		game._request_next()
+
+
+## Now and then, use something the Stratagems tab says is playable.
+func _maybe_spend() -> void:
+	if rng.randf() >= SPEND_CHANCE:
+		return
+	var rows: Array = game._stratagem_view()["rows"].filter(func(r: Dictionary) -> bool: return str(r["button"]) != "")
+	if rows.is_empty():
+		return
+	var r: Dictionary = rows[rng.randi_range(0, rows.size() - 1)]
+	_note("stratagem %s" % r["name"])
+	await game._on_stratagem_pressed(str(r["id"]))
+
+
 ## Hand one unit that still can act to [param action]. False when none are left.
 func _next_unit(can_act: Callable, action: Callable) -> bool:
 	for u in game.battle.living(GameRoot.HUMAN):
@@ -96,6 +193,7 @@ func _next_unit(can_act: Callable, action: Callable) -> bool:
 func _move(u: UnitState) -> void:
 	if rng.randf() < 0.25 and _spec("mode.advance") != {}:
 		await _press("mode.advance")
+		await _maybe_spend()
 	var goal: Vector2 = game.battle.objectives[rng.randi_range(0, game.battle.objectives.size() - 1)]
 	var direction: Vector2 = (goal - u.centre()).normalized()
 	var reach: float = game._allowed_distance(u)
@@ -124,11 +222,13 @@ func _charge(_u: UnitState) -> void:
 	if not _enabled("button.declare_charge"):
 		return
 	await _press("button.declare_charge")
+	await _maybe_spend()
 	if _spec("button.suggest") == {}:
 		return
 	await _press("button.suggest")
 	if _enabled("button.confirm_charge"):
 		await _press("button.confirm_charge")
+		await _maybe_spend()
 	else:
 		await _press("button.give_up")
 
@@ -141,6 +241,7 @@ func _short_move(_u: UnitState) -> void:
 
 
 func _fight(u: UnitState) -> void:
+	await _maybe_spend()
 	for e in game.battle.living(1 - GameRoot.HUMAN):
 		if u.gap_to(e) <= UnitRules.ENGAGEMENT_RANGE:
 			game._on_unit_tapped(e)
@@ -213,8 +314,13 @@ func _note(text: String) -> void:
 func _result(outcome: String, steps: int) -> Dictionary:
 	var b: Battle = game.battle
 	var actions: Dictionary = {}
+	var stratagems: Dictionary = {}
 	for e in b.events:
+		if e["type"] == "stratagem":
+			var key: String = "%s/%s" % [e["id"], "you" if int(e["side"]) == GameRoot.HUMAN else "ai"]
+			stratagems[key] = int(stratagems.get(key, 0)) + 1
 		if int(e.get("side", -1)) == GameRoot.HUMAN:
 			actions[e["type"]] = int(actions.get(e["type"], 0)) + 1
 	return {"outcome": outcome, "steps": steps, "round": b.flow.round_no, "vp": b.vp.duplicate(),
-		"chooser": b.fight_chooser(), "trail": trail.duplicate(), "actions": actions}
+		"chooser": b.fight_chooser(), "trail": trail.duplicate(), "actions": actions,
+		"stratagems": stratagems, "prompts": prompts_seen}

@@ -38,8 +38,8 @@ wound roll. Any other tag is reported as "not applied".
 | Stealth | Applied: ranged attacks against the unit count as having cover |
 | Lone Operative | Applied: can't be shot from beyond 12". The X" form and attached units aren't handled |
 | Deadly Demise X | Applied: rolled once per unit on destruction, measured from the last model to fall |
-| Deep Strike, Infiltrators | Stand-in: deploys normally |
-| Scouts | Stand-in: no pre-battle move, deploys normally |
+| Deep Strike, Infiltrators | Stand-in: set up in your zone in the deployment stage |
+| Scouts | Stand-in: no pre-battle move, set up in your zone |
 | Leader | Stand-in: fights as its own unit |
 | Firing Deck, Hover | Unused: no transport or aircraft rules yet |
 | Super-heavy walker | Stand-in: moves as a normal unit |

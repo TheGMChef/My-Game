@@ -124,7 +124,6 @@ func set_density(compact: bool, tiny: bool, show_info: bool) -> void:
 	_wordmark.visible = not compact
 	_info.visible = show_info
 	for side in range(2):
-		_cp[side].visible = not tiny
 		_who[side].visible = not tiny
 
 
@@ -132,13 +131,15 @@ func refresh(round_no: int, total_rounds: int, my_turn: bool, phase: String, cp:
 	var turn: String = UIText.t("side.you_turn") if my_turn else UIText.t("side.ai_turn")
 	if over:
 		_round.text = UIText.t("hud.battle_over")
+	elif phase == "deployment":
+		_round.text = UIText.t("help.title.deployment")
 	elif _tiny:
 		_round.text = UIText.t("hud.round_short", [round_no, total_rounds])
 	elif _compact:
 		_round.text = turn
 	else:
 		_round.text = "%s · %s" % [UIText.t("hud.round", [round_no, total_rounds]), turn]
-	var current: int = PHASES.find(phase)
+	var current: int = PHASES.find(phase)    # -1 during deployment: no step is lit
 	for i in range(PHASES.size()):
 		var on: bool = i == current
 		_steps[i].theme_type_variation = "StepOn" if on else "StepOff"

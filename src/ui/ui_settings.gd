@@ -22,6 +22,8 @@ var ai_speed_index: int = AI_SPEED_NORMAL
 var confirm_end_phase: bool = true
 ## Reanimation Protocols brings destroyed models back. False means it heals wounds only.
 var reanimate_models: bool = true
+## Stop the opponent's turn to offer a stratagem you can use. False means those moments pass by.
+var stratagem_prompts: bool = true
 
 
 func text_scale() -> float:
@@ -47,6 +49,7 @@ func load_from_disk(path: String = PATH) -> void:
 	ai_speed_index = clampi(int(cfg.get_value("gameplay", "ai_speed", AI_SPEED_NORMAL)), 0, AI_SPEEDS.size() - 1)
 	confirm_end_phase = bool(cfg.get_value("gameplay", "confirm_end_phase", true))
 	reanimate_models = bool(cfg.get_value("gameplay", "reanimate_models", true))
+	stratagem_prompts = bool(cfg.get_value("gameplay", "stratagem_prompts", true))
 
 
 ## [param path] is for tests. The game always uses [constant PATH].
@@ -62,4 +65,5 @@ func save_to_disk(path: String = PATH) -> void:
 	cfg.set_value("gameplay", "ai_speed", ai_speed_index)
 	cfg.set_value("gameplay", "confirm_end_phase", confirm_end_phase)
 	cfg.set_value("gameplay", "reanimate_models", reanimate_models)
+	cfg.set_value("gameplay", "stratagem_prompts", stratagem_prompts)
 	cfg.save(path)

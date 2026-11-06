@@ -17,7 +17,7 @@ The look is "cold board, hot actions": blue-black neutrals, one yellow action co
   sustained hits, devastating wounds, torrent, heavy, lance, melta, ignores cover), turn flow and phases, charges, pile-in, consolidation, fight order, terrain (cover, hidden, obscuring, solid), unit-level shooting and melee, a battle orchestrator with a simple AI, coherency, engagement, battle-shock, movement legality (normal, advance, fall back), the full hit / wound / save /
   damage sequence, mortal wounds, hazard rolls, Feel No Pain, objective control and VP scoring.
 - **Not built yet:**
-  stratagems, transports, attached units, reserves, desperate escape, a board UI, a smarter AI.
+  transports, attached units, reserves (so Rapid Ingress), desperate escape, a smarter AI.
 - **Rules source:** official 11th edition PDFs, summarised in own words in `design/rules/`. Gaps that the PDFs do not
   cover (modifier caps, re-rolls, points) are listed there and are not guessed.
 - **Scenario:** `assets/data/scenario_clash_of_patrols.json` is a placeholder from the 2023 (10th edition) Combat Patrol
@@ -36,7 +36,7 @@ Godot 4.7.2 on your PATH, then: `godot --headless --path . --import`, then
 
 ## Next steps
 
-1. A board UI so you can play and watch battles, then stratagems, transports and reserves. See `design/rules/engine-coverage.md`.
+1. Transports and reserves. See `design/rules/engine-coverage.md`.
 2. Terrain, cover and visibility in 2D.
 3. A first playable board and a simple AI.
 
@@ -48,7 +48,7 @@ The `.claude/` folder, `CLAUDE.md` and `studio-tests/` come from [Claude Code Ga
 
 ## Play it
 
-Run the project in Godot 4.7 (main scene `scenes/main.tscn`): you (blue circles) against the scripted AI (orange hexagons). Drag a unit to move it, tap an enemy to target it, and read the right-hand panel for the rule being applied and exact hit/wound odds before you commit. The main menu has Continue, New battle, Settings and How to play; the game saves at the start of each of your turns to `user://save.json`. In battle, the Menu button (or Esc with nothing selected) opens the pause menu. Settings has Display, Gameplay, Accessibility and Controls tabs. The board toolbar has a Ruler (R key) and zoom. Screenshots of each screen are in `production/qa/evidence/`; `bash tools/dev/shots.sh <folder>` regenerates them.
+Run the project in Godot 4.7 (main scene `scenes/main.tscn`): you (blue circles) against the scripted AI (orange hexagons). Place your units in your zone, then drag a unit to move it, tap an enemy to target it, and read the right-hand panel for the rule being applied and exact hit/wound odds before you commit. The main menu has Continue, New battle, Settings and How to play; the game saves at the start of each of your turns to `user://save.json`. In battle, the Menu button (or Esc with nothing selected) opens the pause menu. The Strat tab lists every stratagem, and the game stops to ask when you can answer the AI (`design/rules/stratagems.md`). Settings has Display, Gameplay, Accessibility and Controls tabs. The board toolbar has a Ruler (R key) and zoom. Screenshots of each screen are in `production/qa/evidence/`; `bash tools/dev/shots.sh <folder>` regenerates them.
 
 ## Your own armies
 

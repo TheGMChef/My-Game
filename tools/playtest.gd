@@ -20,6 +20,8 @@ func _run() -> void:
 	var totals: Array[int] = [0, 0]
 	var wins: Array[int] = [0, 0, 0]
 	var actions: Dictionary = {}
+	var stratagems: Dictionary = {}
+	var prompts: int = 0
 	var started: int = Time.get_ticks_msec()
 	for i in range(games):
 		var seed_value: int = first + i
@@ -27,6 +29,9 @@ func _run() -> void:
 		counts[r["outcome"]] = int(counts.get(r["outcome"], 0)) + 1
 		for k in r["actions"]:
 			actions[k] = int(actions.get(k, 0)) + int(r["actions"][k])
+		for k in r["stratagems"]:
+			stratagems[k] = int(stratagems.get(k, 0)) + int(r["stratagems"][k])
+		prompts += int(r["prompts"])
 		totals[0] += int(r["vp"][0])
 		totals[1] += int(r["vp"][1])
 		wins[0 if r["vp"][0] > r["vp"][1] else (1 if r["vp"][1] > r["vp"][0] else 2)] += 1
@@ -40,6 +45,8 @@ func _run() -> void:
 	print("played %d games in %.1fs: %s" % [games, (Time.get_ticks_msec() - started) / 1000.0, counts])
 	print("average VP: you %.1f, AI %.1f | wins: you %d, AI %d, draws %d" % [float(totals[0]) / games, float(totals[1]) / games, wins[0], wins[1], wins[2]])
 	print("your actions: ", actions)
+	print("stratagems used: ", stratagems)
+	print("prompts answered: ", prompts)
 	quit(1 if failures > 0 else 0)
 
 
@@ -67,11 +74,12 @@ func _real_rosters(seed_value: int) -> Array:
 func _play_one(seed_value: int) -> Dictionary:
 	var game: GameRoot = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	game.skip_roster = true
+	game.full_flow = true
 	game.battle_seed = seed_value
 	if OS.get_cmdline_user_args().has("real"):
 		game.armies_override = _real_rosters(seed_value)
-	root.add_child(game)
 	game.settings.reduced_motion = true
+	root.add_child(game)
 	await process_frame
 	var result: Dictionary = await PlaytestBot.new(game, seed_value).play()
 	game.queue_free()

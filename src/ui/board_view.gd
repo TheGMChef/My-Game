@@ -45,6 +45,7 @@ var los_blocked: bool = false
 var anim_positions: Dictionary = {}      # unit id -> Array[Vector2]
 var acted: Array = []                    # units that have used their action this phase
 var drag_enabled: bool = false
+var deploy_drag: bool = false            # a drag anywhere moves the unit being placed
 var weapon_rings: Array[float] = []      # ring radii in inches, drawn around the selected unit
 var keep_clear: Array[Rect2] = []        # screen areas name plates should stay out of
 
@@ -294,7 +295,9 @@ func _on_press(pos: Vector2, force_pan: bool) -> void:
 	_moved_far = false
 	_panning = false
 	_drag_unit = null
-	if not ruler_on and drag_enabled and selected != null and not force_pan and unit_at(pos) == selected:
+	if not ruler_on and deploy_drag and selected != null and not force_pan:
+		_drag_unit = selected
+	elif not ruler_on and drag_enabled and selected != null and not force_pan and unit_at(pos) == selected:
 		_drag_unit = selected
 
 
@@ -465,6 +468,9 @@ func _draw_zones(ppi: float) -> void:
 		var r: Array = battle.scenario["deployment_zones"][keys[side]]["rect"]
 		var rect := Rect2(world_to_screen(Vector2(float(r[0]), float(r[1]))), Vector2(float(r[2]), float(r[3])) * ppi)
 		draw_rect(rect, UITokens.ZONE_TINT[side])
+		if battle.deployment_active and side == 0:
+			draw_rect(rect, UITokens.with_alpha(UITokens.ACTION, 0.1))
+			draw_rect(rect, UITokens.ACTION, false, 2.0)
 
 
 ## Dense terrain is solid, light terrain is half filled and exposed terrain is a thin outline.
@@ -507,7 +513,7 @@ func _draw_coherency(ppi: float) -> void:
 
 func _draw_engagement(ppi: float) -> void:
 	## Soft translucent discs (not outlines) so overlapping model zones read as one area.
-	if selected == null:
+	if selected == null or battle.deployment_active:
 		return
 	for u in battle.units:
 		if u.owner == selected.owner or selected.gap_to(u) > 14.0:

@@ -5,12 +5,16 @@ extends PanelContainer
 ## or {"none": text}. Unit: {"side", "name", "note", "tiles", "extras", "weapons": [[name, line, index, on]]}
 ## with an index of -1 for a weapon that has no range to show.
 ## Log lines: {"text", "side"}. Units: {"id", "side", "name", "count", "selected", "marks": [[text, colour]]}.
+## Stratagems: {"cp": text, "rows": [{"id", "name", "cost", "effect", "button", "reason"}]}, where a row
+## with an empty "button" is greyed and "reason" says why.
 
 signal rules_pressed
 signal unit_row_pressed(unit_id: String)
 signal weapon_pressed(index: int)
+signal stratagem_pressed(id: String)
 
-const TAB_KEYS: Array[String] = ["tab.orders", "tab.unit", "tab.log", "tab.units"]
+const TAB_KEYS: Array[String] = ["tab.orders", "tab.unit", "tab.log", "tab.units", "tab.stratagems"]
+const GREYED := 0.6
 const LATEST := 3
 const LOG_LINE_HEIGHT := 22.0
 
@@ -26,6 +30,8 @@ var _latest_title: Label
 var _unit_box: VBoxContainer
 var _log_box: VBoxContainer
 var _units_box: VBoxContainer
+var _strat_box: VBoxContainer
+var _strat_view: Dictionary = {"unset": true}
 var _units_view: Array = []
 var _odds_view: Dictionary = {"unset": true}
 var _unit_view: Dictionary = {"unset": true}
@@ -51,11 +57,12 @@ func _init() -> void:
 		b.pressed.connect(_show_page.bind(i))
 		tab_row.add_child(b)
 		_tabs.append(b)
-	_pages = [_page(col), _page(col), _page(col), _page(col)]
+	_pages = [_page(col), _page(col), _page(col), _page(col), _page(col)]
 	_build_orders(_pages[0].get_child(0))
 	_unit_box = _pages[1].get_child(0)
 	_log_box = _pages[2].get_child(0)
 	_units_box = _pages[3].get_child(0)
+	_strat_box = _pages[4].get_child(0)
 	_tabs[0].button_pressed = true
 	_show_page(0)
 
@@ -181,6 +188,46 @@ func show_units(rows: Array) -> void:
 		for r in mine:
 			_units_box.add_child(_unit_row(r))
 	_restore_row(_units_box, focused)
+
+
+## The Stratagems tab: what can be played now, then the rest greyed with the reason.
+func show_stratagems(view: Dictionary) -> void:
+	if view == _strat_view:
+		return
+	_strat_view = view.duplicate(true)
+	_clear(_strat_box)
+	_strat_box.add_child(_wrapped("LabelBody", str(view["cp"])))
+	for r in view["rows"]:
+		_strat_box.add_child(_strat_row(r))
+
+
+func _strat_row(r: Dictionary) -> VBoxContainer:
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 0)
+	var head := HBoxContainer.new()
+	row.add_child(head)
+	var name_label := Label.new()
+	name_label.theme_type_variation = "LabelRowName"
+	name_label.text = str(r["name"])
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(name_label)
+	var cost := Label.new()
+	cost.theme_type_variation = "LabelStat"
+	cost.text = str(r["cost"])
+	head.add_child(cost)
+	row.add_child(_wrapped("LabelDim", str(r["effect"])))
+	if str(r["button"]) != "":
+		var use := Button.new()
+		use.text = str(r["button"])
+		use.custom_minimum_size.y = UITokens.HIT
+		use.clip_text = true
+		use.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		use.pressed.connect(func() -> void: stratagem_pressed.emit(str(r["id"])))
+		row.add_child(use)
+	else:
+		row.add_child(_wrapped("LabelMeta", str(r["reason"])))
+		row.modulate.a = GREYED
+	return row
 
 
 func show_log(lines: Array) -> void:

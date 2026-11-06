@@ -5,17 +5,17 @@
       "name": "Iron Legion (placeholder)",
       "units": [
         {"name": "Line Squad", "models": 10, "move": 6, "toughness": 4, "save": 3, "wounds": 2, "leadership": 6, "oc": 2, "base_mm": 32,
-         "keywords": ["INFANTRY", "BATTLELINE"],
+         "keywords": ["INFANTRY", "BATTLELINE", "GRENADES"],
          "weapons": [
            {"name": "Bolt rifle", "range": 24, "attacks": "2", "skill": 3, "strength": 4, "ap": 1, "damage": "1", "abilities": ["RAPID FIRE 1"]},
            {"name": "Combat blade", "range": 0, "attacks": "3", "skill": 3, "strength": 4, "ap": 0, "damage": "1"}]},
         {"name": "Assault Squad", "models": 5, "move": 8, "toughness": 4, "save": 3, "wounds": 2, "leadership": 6, "oc": 1, "base_mm": 32,
-         "keywords": ["INFANTRY"],
+         "keywords": ["INFANTRY", "GRENADES"],
          "weapons": [
            {"name": "Hand flamer", "range": 12, "attacks": "D6", "skill": 3, "strength": 4, "ap": 0, "damage": "1", "abilities": ["TORRENT", "CLOSE-QUARTERS"]},
            {"name": "Power sword", "range": 0, "attacks": "4", "skill": 3, "strength": 5, "ap": 2, "damage": "1", "abilities": ["LETHAL HITS"]}]},
         {"name": "Siege Tank", "models": 1, "move": 10, "toughness": 10, "save": 3, "wounds": 12, "leadership": 7, "oc": 3, "base_mm": 100,
-         "keywords": ["VEHICLE"],
+         "keywords": ["VEHICLE", "SMOKE"],
          "weapons": [
            {"name": "Demolisher cannon", "range": 24, "attacks": "D6", "skill": 3, "strength": 10, "ap": 3, "damage": "3", "abilities": ["BLAST", "MELTA 2"]},
            {"name": "Tracks", "range": 0, "attacks": "4", "skill": 4, "strength": 6, "ap": 0, "damage": "1"}]}
@@ -25,7 +25,7 @@
       "name": "Verdant Host (placeholder)",
       "units": [
         {"name": "Thorn Warriors", "models": 10, "move": 6, "toughness": 3, "save": 5, "wounds": 1, "leadership": 7, "oc": 2, "base_mm": 28,
-         "keywords": ["INFANTRY", "BATTLELINE"],
+         "keywords": ["INFANTRY", "BATTLELINE", "GRENADES"],
          "weapons": [
            {"name": "Thorn gun", "range": 18, "attacks": "2", "skill": 4, "strength": 3, "ap": 0, "damage": "1", "abilities": ["SUSTAINED HITS 1"]},
            {"name": "Claws", "range": 0, "attacks": "2", "skill": 3, "strength": 3, "ap": 0, "damage": "1"}]},

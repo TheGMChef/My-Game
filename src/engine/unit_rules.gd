@@ -8,6 +8,7 @@ extends RefCounted
 const COHERENCY_NEAR := 2.0
 const COHERENCY_FAR := 9.0
 const ENGAGEMENT_RANGE := 2.0
+const SETUP_MARGIN := 0.001
 
 
 ## True if every model is within 2" of another model and within 9" of all the others.
@@ -55,6 +56,41 @@ static func battle_shock_roll(unit: UnitState, dice: Dice, units: Array = [], mo
 	if not passed:
 		unit.battle_shocked = true
 	return passed
+
+
+## How many dice a battle-shock roll uses for this unit: 3 in Synapse range, otherwise 2.
+static func shock_dice_count(unit: UnitState, units: Array) -> int:
+	return 3 if ArmyRules.in_synapse(unit, units) else 2
+
+
+## Check a set-up during deployment (03.02): inside the zone, in coherency, on no other model,
+## out of dense terrain and unengaged. Returns {"ok": bool, "reason": String}.
+static func check_deploy(unit: UnitState, positions: Array[Vector2], zone: Rect2, all_units: Array,
+		board: Rect2, terrain: Array = []) -> Dictionary:
+	if positions.size() != unit.models.size():
+		return _no("one position is needed for each model")
+	var r: float = unit.base_radius
+	var inside: Rect2 = zone.intersection(board).grow(-r + SETUP_MARGIN)
+	for i in range(positions.size()):
+		if not inside.has_point(positions[i]):
+			return _no("every model must be wholly inside your deployment zone")
+		for j in range(i + 1, positions.size()):
+			if positions[i].distance_to(positions[j]) < r * 2.0 - SETUP_MARGIN:
+				return _no("models cannot overlap")
+		for area in terrain:
+			for f in area.features:
+				if f["category"] == "dense" and Geo.circle_overlaps_rect(positions[i], r, f["rect"]):
+					return _no("models cannot be set up inside dense terrain")
+		for other in all_units:
+			for n in other.models:
+				if positions[i].distance_to(n["pos"]) < r + other.base_radius - SETUP_MARGIN:
+					return _no("models cannot overlap")
+	if not in_coherency(positions, r):
+		return _no("the unit would not be in coherency")
+	for other in all_units:
+		if other.owner != unit.owner and positions_engaged_with(positions, r, other):
+			return _no("the unit must be set up unengaged")
+	return {"ok": true, "reason": ""}
 
 
 ## Check a proposed move. [param mode] is "normal", "advance" or "fall_back".
