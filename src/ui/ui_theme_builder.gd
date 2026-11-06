@@ -172,6 +172,10 @@ static func _panels(th: Theme) -> void:
 	tile.content_margin_top = UITokens.SPACE_1
 	tile.content_margin_bottom = UITokens.SPACE_1
 	th.set_stylebox("panel", "Tile", tile)
+	th.set_type_variation("RowPanel", "PanelContainer")
+	th.set_stylebox("panel", "RowPanel", notch(UITokens.PLATE, UITokens.EDGE))
+	th.set_type_variation("RowPanelOn", "PanelContainer")
+	th.set_stylebox("panel", "RowPanelOn", notch(UITokens.RAISED, UITokens.ACTION))
 	th.set_type_variation("StepOn", "PanelContainer")
 	th.set_stylebox("panel", "StepOn", _step(UITokens.ACTION))
 	th.set_type_variation("StepOff", "PanelContainer")

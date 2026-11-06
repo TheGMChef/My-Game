@@ -7,13 +7,17 @@ extends PanelContainer
 signal next_pressed
 signal skip_pressed
 
+const MIN_HINT_WIDTH := 150.0
+
 var _box: BoxContainer
+var _actions: BoxContainer
 var _scroll: ScrollContainer
 var _options: HFlowContainer
 var _main_slot: HBoxContainer
 var _skip: Button
 var _next: Button
 var _phone: bool = false
+var _narrow: bool = false
 
 
 func _init() -> void:
@@ -30,20 +34,27 @@ func _init() -> void:
 	_options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_options.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_scroll.add_child(_options)
+	_actions = BoxContainer.new()
+	_actions.add_theme_constant_override("separation", UITokens.SPACE_2)
+	_actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_box.add_child(_actions)
 	_skip = _make_button(UIText.t("button.skip"), func() -> void: skip_pressed.emit(), "GhostButton")
 	_skip.visible = false
-	_box.add_child(_skip)
+	_actions.add_child(_skip)
 	_next = _make_button("", func() -> void: next_pressed.emit(), "GhostButton")
-	_box.add_child(_next)
+	_actions.add_child(_next)
 	_main_slot = HBoxContainer.new()
-	_box.add_child(_main_slot)
+	_main_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_actions.add_child(_main_slot)
 	set_phone(false)
+	resized.connect(_on_resized)
 
 
 ## Phone layout stacks the bar into the right-hand column, main action above End phase.
 func set_phone(on: bool) -> void:
 	_phone = on
-	_box.vertical = on
+	_box.vertical = on or _narrow
+	_actions.vertical = on
 	custom_minimum_size.y = 0.0 if on else float(UITokens.BOTTOM_BAR)
 	if on:
 		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
@@ -52,9 +63,15 @@ func set_phone(on: bool) -> void:
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if on else ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL if on else Control.SIZE_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL if on else Control.SIZE_FILL
-	_box.move_child(_main_slot, _box.get_child_count() - 2 if on else _box.get_child_count() - 1)
+	_actions.move_child(_main_slot, 0 if on else _actions.get_child_count() - 1)
 	for b: Button in [_skip, _next]:
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL if on else Control.SIZE_FILL
+
+
+## A narrow bar puts the options on their own row, above End phase and the main action.
+func set_narrow(on: bool) -> void:
+	_narrow = on
+	_box.vertical = on or _phone
 
 
 func set_busy(on: bool) -> void:
@@ -83,11 +100,26 @@ func _hint(text: String) -> Label:
 	l.text = text
 	l.theme_type_variation = "LabelDim"
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.custom_minimum_size.y = UITokens.HIT
-	if _phone:
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.custom_minimum_size = Vector2(UITokens.PHONE_COLUMN - UITokens.SPACE_6, 0)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_fit_hint(l)
 	return l
+
+
+## As wide as the line needs, up to the room beside the buttons, so a long hint wraps and never
+## forces the whole screen wider than the window.
+func _fit_hint(l: Label) -> void:
+	var room: float = float(UITokens.PHONE_COLUMN - UITokens.SPACE_6)
+	if not _phone:
+		var one_line: float = UITokens.FONT_SANS.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_SECONDARY).x + 2.0
+		var beside: float = 0.0 if _narrow else _actions.size.x + float(UITokens.SPACE_2)
+		room = minf(ceilf(one_line), maxf(MIN_HINT_WIDTH, size.x - beside - float(UITokens.SPACE_6)))
+	l.custom_minimum_size = Vector2(room, UITokens.HIT if not _phone else 0)
+
+
+func _on_resized() -> void:
+	for c in _options.get_children():
+		if c is Label:
+			_fit_hint(c)
 
 
 func _main_button(spec: Dictionary) -> Button:

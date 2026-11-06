@@ -48,7 +48,7 @@ The `.claude/` folder, `CLAUDE.md` and `studio-tests/` come from [Claude Code Ga
 
 ## Play it
 
-Run the project in Godot 4.7 (main scene `scenes/main.tscn`): you (blue circles) against the scripted AI (orange hexagons). Drag a unit to move it, tap an enemy to target it, and read the right-hand panel for the rule being applied and exact hit/wound odds before you commit. Settings cover text size, colour-blind mode, reduced motion and overlays. Screenshots of each screen are in `production/qa/evidence/board-view/`; `tools/ui_tour.gd` regenerates them.
+Run the project in Godot 4.7 (main scene `scenes/main.tscn`): you (blue circles) against the scripted AI (orange hexagons). Drag a unit to move it, tap an enemy to target it, and read the right-hand panel for the rule being applied and exact hit/wound odds before you commit. The main menu has Continue, New battle, Settings and How to play; the game saves at the start of each of your turns to `user://save.json`. In battle, the Menu button (or Esc with nothing selected) opens the pause menu. Settings has Display, Gameplay, Accessibility and Controls tabs. The board toolbar has a Ruler (R key) and zoom. Screenshots of each screen are in `production/qa/evidence/`; `bash tools/dev/shots.sh <folder>` regenerates them.
 
 ## Your own armies
 

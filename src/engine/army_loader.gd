@@ -10,12 +10,13 @@ const PLACEHOLDER := "res://assets/data/armies_placeholder.json"
 const LOCAL_DIRS: Array[String] = ["res://data/local", "user://armies"]
 
 
-## Every army found, as an Array of {name, units, source}.
-static func load_all(extra_path: String = "") -> Array:
+## Every army found, as an Array of {name, units, source}. With [param local] false only the
+## invented placeholders are read, which keeps screenshots free of real army names.
+static func load_all(extra_path: String = "", local: bool = true) -> Array:
 	var out: Array = []
 	out.append_array(parse_file(PLACEHOLDER))
 	for dir in LOCAL_DIRS:
-		if not DirAccess.dir_exists_absolute(dir):
+		if not local or not DirAccess.dir_exists_absolute(dir):
 			continue
 		for f in DirAccess.get_files_at(dir):
 			if f.begins_with("army_") or dir.begins_with("user://"):

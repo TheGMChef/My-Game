@@ -27,6 +27,34 @@ static func from_dict(d: Dictionary) -> Weapon:
 	return w
 
 
+## Plain data for a save file. Unlike the army data, this holds the parsed abilities.
+func to_save() -> Dictionary:
+	var ability_rows: Array = []
+	for a in abilities:
+		ability_rows.append({"name": a["name"], "value": a["value"], "threshold": a["threshold"],
+			"keywords": (a["keywords"] as Array).duplicate()})
+	return {"name": weapon_name, "range": range_in, "attacks": attacks, "skill": skill, "strength": strength,
+		"ap": ap, "damage": damage, "abilities": ability_rows}
+
+
+## Rebuild from [method to_save].
+static func from_save(d: Dictionary) -> Weapon:
+	var w := Weapon.new()
+	w.weapon_name = str(d["name"])
+	w.range_in = float(d["range"])
+	w.attacks = str(d["attacks"])
+	w.skill = int(d["skill"])
+	w.strength = int(d["strength"])
+	w.ap = int(d["ap"])
+	w.damage = str(d["damage"])
+	for a in d["abilities"]:
+		var keywords: Array[String] = []
+		for k in a["keywords"]:
+			keywords.append(str(k))
+		w.abilities.append({"name": str(a["name"]), "value": int(a["value"]), "threshold": int(a["threshold"]), "keywords": keywords})
+	return w
+
+
 func is_melee() -> bool:
 	return range_in <= 0.0
 

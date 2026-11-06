@@ -1,24 +1,32 @@
 class_name SidePanel
 extends PanelContainer
-## Orders, Unit and Log tabs. Display only: the controller passes plain view data.
+## Orders, Unit, Log and Units tabs. Display only: the controller passes plain view data.
 ## Odds: {"heading", "total", "lost", "fraction", "rows": [{"title", "note", "tiles": [[label, value]]}]}
-## or {"none": text}. Unit: {"side", "name", "note", "tiles", "extras", "weapons": [[name, line]]}.
-## Log lines: {"text", "side"}.
+## or {"none": text}. Unit: {"side", "name", "note", "tiles", "extras", "weapons": [[name, line, index, on]]}
+## with an index of -1 for a weapon that has no range to show.
+## Log lines: {"text", "side"}. Units: {"id", "side", "name", "count", "selected", "marks": [[text, colour]]}.
 
+signal rules_pressed
+signal unit_row_pressed(unit_id: String)
+signal weapon_pressed(index: int)
+
+const TAB_KEYS: Array[String] = ["tab.orders", "tab.unit", "tab.log", "tab.units"]
 const LATEST := 3
 const LOG_LINE_HEIGHT := 22.0
 
 var _tabs: Array[Button] = []
 var _pages: Array[ScrollContainer] = []
 var _title: Label
+var _rules: Button
 var _body: Label
 var _detail: RichTextLabel
 var _odds_box: VBoxContainer
-var _mini_unit: VBoxContainer
 var _latest: VBoxContainer
 var _latest_title: Label
 var _unit_box: VBoxContainer
 var _log_box: VBoxContainer
+var _units_box: VBoxContainer
+var _units_view: Array = []
 var _odds_view: Dictionary = {"unset": true}
 var _unit_view: Dictionary = {"unset": true}
 var _log_seen: Array = []
@@ -32,10 +40,10 @@ func _init() -> void:
 	tab_row.add_theme_constant_override("separation", 2)
 	col.add_child(tab_row)
 	var group := ButtonGroup.new()
-	for i in range(3):
+	for i in range(TAB_KEYS.size()):
 		var b := Button.new()
 		b.theme_type_variation = "TabButton"
-		b.text = UIText.t(["tab.orders", "tab.unit", "tab.log"][i]).to_upper()
+		b.text = UIText.t(TAB_KEYS[i]).to_upper()
 		b.toggle_mode = true
 		b.button_group = group
 		b.custom_minimum_size.y = UITokens.HIT
@@ -43,10 +51,11 @@ func _init() -> void:
 		b.pressed.connect(_show_page.bind(i))
 		tab_row.add_child(b)
 		_tabs.append(b)
-	_pages = [_page(col), _page(col), _page(col)]
+	_pages = [_page(col), _page(col), _page(col), _page(col)]
 	_build_orders(_pages[0].get_child(0))
 	_unit_box = _pages[1].get_child(0)
 	_log_box = _pages[2].get_child(0)
+	_units_box = _pages[3].get_child(0)
 	_tabs[0].button_pressed = true
 	_show_page(0)
 
@@ -64,10 +73,19 @@ func _page(parent: Control) -> ScrollContainer:
 
 
 func _build_orders(col: VBoxContainer) -> void:
+	var head := HBoxContainer.new()
+	col.add_child(head)
 	_title = Label.new()
 	_title.theme_type_variation = "LabelHeading"
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(_title)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(_title)
+	_rules = Button.new()
+	_rules.text = UIText.t("button.rules")
+	_rules.custom_minimum_size = Vector2(UITokens.HIT, UITokens.HIT)
+	_rules.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_rules.pressed.connect(func() -> void: rules_pressed.emit())
+	head.add_child(_rules)
 	_body = _wrapped("LabelBody")
 	col.add_child(_body)
 	_detail = RichTextLabel.new()
@@ -78,8 +96,6 @@ func _build_orders(col: VBoxContainer) -> void:
 	col.add_child(_detail)
 	_odds_box = VBoxContainer.new()
 	col.add_child(_odds_box)
-	_mini_unit = VBoxContainer.new()
-	col.add_child(_mini_unit)
 	_latest_title = _section(UIText.t("panel.latest"))
 	col.add_child(_latest_title)
 	_latest = VBoxContainer.new()
@@ -91,8 +107,9 @@ func _show_page(index: int) -> void:
 		_pages[i].visible = i == index
 
 
-func show_orders(title: String, body: String, detail: String) -> void:
+func show_orders(title: String, body: String, detail: String, rules: bool = true) -> void:
 	_title.text = title
+	_rules.visible = rules
 	_body.text = body
 	_body.visible = body != ""
 	_detail.text = detail
@@ -140,13 +157,30 @@ func show_unit(view: Dictionary) -> void:
 	if view == _unit_view:
 		return
 	_unit_view = view
-	_clear(_mini_unit)
+	var focused: String = _focused_row()
 	_clear(_unit_box)
 	if view.is_empty():
 		_unit_box.add_child(_wrapped("LabelDim", UIText.t("hint.no_unit")))
 		return
-	_mini_unit.add_child(_unit_card(view, false))
-	_unit_box.add_child(_unit_card(view, true))
+	_unit_box.add_child(_unit_card(view))
+	_restore_row(_unit_box, focused)
+
+
+## The Units tab: your units, then the enemy's. Tapping a row reports its unit.
+func show_units(rows: Array) -> void:
+	if rows == _units_view:
+		return
+	_units_view = rows.duplicate(true)
+	var focused: String = _focused_row()
+	_clear(_units_box)
+	for side in range(2):
+		var mine: Array = rows.filter(func(r: Dictionary) -> bool: return int(r["side"]) == side)
+		if mine.is_empty():
+			continue
+		_units_box.add_child(_section(UIText.t("panel.your_units") if side == 0 else UIText.t("panel.enemy_units")))
+		for r in mine:
+			_units_box.add_child(_unit_row(r))
+	_restore_row(_units_box, focused)
 
 
 func show_log(lines: Array) -> void:
@@ -163,14 +197,78 @@ func show_log(lines: Array) -> void:
 	_latest_title.visible = count > 0
 
 
-func _unit_card(view: Dictionary, full: bool) -> PanelContainer:
+func _unit_row(r: Dictionary) -> TapRow:
+	var row := TapRow.new(str(r["id"]), bool(r["selected"]))
+	var box := HBoxContainer.new()
+	row.add_child(box)
+	box.add_child(ShapeMark.new(int(r["side"]), 14.0))
+	var name_label := Label.new()
+	name_label.theme_type_variation = "LabelRowName"
+	name_label.text = str(r["name"])
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	box.add_child(name_label)
+	for mark in r["marks"]:
+		var chip := Label.new()
+		chip.theme_type_variation = "LabelMeta"
+		chip.text = str(mark[0])
+		chip.add_theme_color_override("font_color", mark[1])
+		box.add_child(chip)
+	var count := Label.new()
+	count.theme_type_variation = "LabelStat"
+	count.text = str(r["count"])
+	box.add_child(count)
+	row.pressed.connect(func() -> void: unit_row_pressed.emit(str(r["id"])))
+	return row
+
+
+## A weapon on the Unit tab. One with a range is a row that toggles its ring on the board.
+func _weapon_row(w: Array) -> Control:
+	var text := VBoxContainer.new()
+	text.add_theme_constant_override("separation", 0)
+	text.add_child(_wrapped("LabelBody", str(w[0])))
+	text.add_child(_wrapped("LabelMeta", str(w[1])))
+	if int(w[2]) < 0:
+		return text
+	var row := TapRow.new("weapon_%d" % int(w[2]), bool(w[3]))
+	row.tooltip_text = UIText.t("tip.weapon_ring")
+	row.add_child(text)
+	row.pressed.connect(func() -> void: weapon_pressed.emit(int(w[2])))
+	return row
+
+
+func _focused_row() -> String:
+	var owner_now: Control = get_viewport().gui_get_focus_owner() if is_inside_tree() else null
+	return (owner_now as TapRow).key if owner_now is TapRow and is_ancestor_of(owner_now) else ""
+
+
+func _restore_row(box: Control, key: String) -> void:
+	if key == "":
+		return
+	var row: TapRow = _find_row(box, key)
+	if row != null:
+		row.grab_focus()
+
+
+func _find_row(node: Node, key: String) -> TapRow:
+	if node is TapRow and (node as TapRow).key == key:
+		return node
+	for c in node.get_children():
+		var found: TapRow = _find_row(c, key)
+		if found != null:
+			return found
+	return null
+
+
+func _unit_card(view: Dictionary) -> PanelContainer:
 	var card := _card()
 	var col: VBoxContainer = card.get_child(0)
 	var head := HBoxContainer.new()
 	col.add_child(head)
 	head.add_child(ShapeMark.new(int(view["side"])))
 	var name_label := Label.new()
-	name_label.theme_type_variation = "LabelHeading" if full else "LabelSection"
+	name_label.theme_type_variation = "LabelHeading"
 	name_label.text = str(view["name"])
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.clip_text = true
@@ -183,10 +281,8 @@ func _unit_card(view: Dictionary, full: bool) -> PanelContainer:
 	col.add_child(_tiles(view["tiles"]))
 	if not (view["extras"] as Array).is_empty():
 		col.add_child(_wrapped("LabelMeta", ", ".join(view["extras"])))
-	if full:
-		for w in view["weapons"]:
-			col.add_child(_wrapped("LabelBody", str(w[0])))
-			col.add_child(_wrapped("LabelMeta", str(w[1])))
+	for w in view["weapons"]:
+		col.add_child(_weapon_row(w))
 	return card
 
 

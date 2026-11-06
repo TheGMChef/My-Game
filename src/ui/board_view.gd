@@ -11,6 +11,8 @@ signal drag_ended(unit: UnitState, delta: Vector2)
 ## Emitted when a second finger lands mid-drag, so the move preview is thrown away.
 signal drag_cancelled
 signal view_changed
+## A measurement was finished or removed.
+signal measure_changed
 
 const MIN_TAP_RADIUS := 28.0
 const DRAG_START_PX := 10.0
@@ -22,6 +24,7 @@ const PLATE_NAME_MAX := 22
 const PLATE_GAP := 8.0
 const BOARD_MARGIN := 24.0
 const BOARD_MARGIN_NO_RAILS := 6.0
+const RULER_LABEL_GAP := 10.0
 
 ## How a unit is marked for the current order. Set per unit in [member highlights].
 const MARK_IN_RANGE := "in_range"
@@ -42,6 +45,12 @@ var los_blocked: bool = false
 var anim_positions: Dictionary = {}      # unit id -> Array[Vector2]
 var acted: Array = []                    # units that have used their action this phase
 var drag_enabled: bool = false
+var weapon_rings: Array[float] = []      # ring radii in inches, drawn around the selected unit
+var keep_clear: Array[Rect2] = []        # screen areas name plates should stay out of
+
+var ruler_on: bool = false
+var _measure: Array[Vector2] = []        # the kept measurement: start and end, board inches
+var _measure_draft: Array[Vector2] = []  # the one being dragged
 
 var _zoom: float = 1.0
 var _pan: Vector2 = Vector2.ZERO          # screen px offset added to the fitted position
@@ -118,6 +127,52 @@ func _clamp_pan() -> void:
 	var board_px: Vector2 = battle.board.size * pixels_per_inch()
 	var slack: Vector2 = Vector2(maxf(0.0, (board_px.x - size.x) * 0.5 + 64.0), maxf(0.0, (board_px.y - size.y) * 0.5 + 64.0))
 	_pan = _pan.clamp(-slack, slack)
+
+
+# ---------------------------------------------------------------- ruler
+
+## Turning the Ruler off also removes the last measurement.
+func set_ruler(on: bool) -> void:
+	ruler_on = on
+	_measure_draft.clear()
+	if not on:
+		clear_measurement()
+	queue_redraw()
+
+
+func clear_measurement() -> void:
+	if not _measure.is_empty():
+		_measure.clear()
+		measure_changed.emit()
+	queue_redraw()
+
+
+func has_measurement() -> bool:
+	return not _measure.is_empty()
+
+
+## Keep a measurement between two board points.
+func set_measurement(from_point: Vector2, to_point: Vector2) -> void:
+	_measure = [from_point, to_point]
+	_measure_draft.clear()
+	measure_changed.emit()
+	queue_redraw()
+
+
+func measurement() -> Array[Vector2]:
+	return _measure
+
+
+func _measure_start(screen_pos: Vector2) -> Vector2:
+	var models: Array = []
+	for u in battle.units:
+		for p in _positions_of(u):
+			models.append({"pos": p, "radius": u.base_radius})
+	return Ruler.start_point(_on_board(screen_to_world(screen_pos)), models)
+
+
+func _on_board(world: Vector2) -> Vector2:
+	return world.clamp(battle.board.position, battle.board.end)
 
 
 # ---------------------------------------------------------------- effects
@@ -226,6 +281,7 @@ func _pinch_start() -> void:
 func _cancel_press() -> void:
 	if _pressing and _drag_unit != null and _moved_far:
 		drag_cancelled.emit()
+	_measure_draft.clear()
 	_pressing = false
 	_drag_unit = null
 	_panning = false
@@ -238,7 +294,7 @@ func _on_press(pos: Vector2, force_pan: bool) -> void:
 	_moved_far = false
 	_panning = false
 	_drag_unit = null
-	if drag_enabled and selected != null and not force_pan and unit_at(pos) == selected:
+	if not ruler_on and drag_enabled and selected != null and not force_pan and unit_at(pos) == selected:
 		_drag_unit = selected
 
 
@@ -247,7 +303,10 @@ func _on_motion(pos: Vector2, relative: Vector2) -> void:
 		_moved_far = true
 	if not _moved_far:
 		return
-	if _drag_unit != null:
+	if ruler_on:
+		_measure_draft = [_measure_start(_press_pos), _on_board(screen_to_world(pos))]
+		queue_redraw()
+	elif _drag_unit != null:
 		drag_moved.emit(_drag_unit, (pos - _press_pos) / pixels_per_inch())
 	else:
 		_panning = true
@@ -260,7 +319,10 @@ func _on_release(pos: Vector2) -> void:
 	if not _pressing:
 		return
 	_pressing = false
-	if _drag_unit != null and _moved_far:
+	if ruler_on and _moved_far:
+		if _measure_draft.size() == 2:
+			set_measurement(_measure_draft[0], _measure_draft[1])
+	elif _drag_unit != null and _moved_far:
 		drag_ended.emit(_drag_unit, (pos - _press_pos) / pixels_per_inch())
 	elif not _moved_far:
 		var hit: UnitState = unit_at(pos)
@@ -321,14 +383,47 @@ func _draw() -> void:
 	if los_line.size() == 2:
 		var c: Color = UITokens.illegal(settings.colour_blind) if los_blocked else UITokens.INK
 		draw_dashed_line(world_to_screen(los_line[0]), world_to_screen(los_line[1]), c, 2.0, 6.0)
+	_draw_weapon_rings(ppi)
 	for u in battle.units:
 		_draw_unit(u, ppi)
 	_draw_ghost(ppi)
 	for f in _fx:
-		var t: float = clampf(float(f["age"]) / float(f["life"]), 0.0, 1.0)
+		var t: float = clampf(float(f["age"]) / maxf(float(f["life"]), 0.001), 0.0, 1.0)
 		var col: Color = f["colour"]
 		draw_line(world_to_screen(f["from"]), world_to_screen(f["to"]), UITokens.with_alpha(col, 1.0 - t * 0.7), 4.0)
-	_draw_plates(ppi, board_rect)
+	if settings.show_plates:
+		_draw_plates(ppi, board_rect)
+	_draw_ruler()
+
+
+## A thin neutral ring for each weapon the player has switched on, at that weapon's range.
+func _draw_weapon_rings(ppi: float) -> void:
+	if selected == null or weapon_rings.is_empty():
+		return
+	var c: Vector2 = world_to_screen(selected.centre())
+	for radius in weapon_rings:
+		draw_arc(c, radius * ppi, 0.0, TAU, 128, UITokens.INK_DIM, 1.0, true)
+
+
+func _draw_ruler() -> void:
+	var line: Array[Vector2] = _measure_draft if _measure_draft.size() == 2 else _measure
+	if line.size() != 2:
+		return
+	var a: Vector2 = world_to_screen(line[0])
+	var b: Vector2 = world_to_screen(line[1])
+	draw_line(a, b, UITokens.INK, 2.0, true)
+	draw_circle(a, 4.0, UITokens.INK)
+	draw_circle(b, 4.0, UITokens.INK)
+	var text: String = Ruler.label(line[0], line[1])
+	var font: Font = UITokens.FONT_MONO_BOLD
+	var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_BODY)
+	var box_size: Vector2 = text_size + Vector2(UITokens.SPACE_3, UITokens.SPACE_1) * 2.0
+	var rect: Rect2 = Ruler.label_rect(a, b, box_size, RULER_LABEL_GAP, Rect2(Vector2.ZERO, size).grow(-2.0))
+	_plate_box.bg_color = UITokens.HULL
+	_plate_box.border_color = UITokens.INK
+	draw_style_box(_plate_box, rect)
+	var base: Vector2 = rect.position + Vector2(float(UITokens.SPACE_3), float(UITokens.SPACE_1) + font.get_ascent(UITokens.TEXT_BODY))
+	draw_string(font, base, text, HORIZONTAL_ALIGNMENT_LEFT, -1, UITokens.TEXT_BODY, UITokens.INK)
 
 
 func _draw_grid(board_rect: Rect2, ppi: float) -> void:
@@ -479,7 +574,7 @@ func _draw_plates(ppi: float, board_rect: Rect2) -> void:
 		units.append(u)
 		entries.append({"size": _plate_size(u), "anchor": _unit_bounds(u, ppi).grow(8.0), "first": u == selected})
 	var view: Rect2 = board_rect.intersection(Rect2(Vector2.ZERO, size)).grow(-2.0)
-	var spots: Array[Rect2] = PlateLayout.arrange(entries, view)
+	var spots: Array[Rect2] = PlateLayout.arrange(entries, view, keep_clear)
 	for i in range(units.size()):
 		_draw_plate(units[i], spots[i])
 

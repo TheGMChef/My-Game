@@ -23,14 +23,15 @@ static func near_synapse_of(unit: UnitState, units: Array, side: int) -> bool:
 
 ## Heal up to [param amount] wounds: wounded models first, then destroyed models come back with
 ## 1 wound, up to the unit's starting strength. Returns the wounds healed.
-static func reanimate(unit: UnitState, amount: int, units: Array, board: Rect2) -> int:
+## With [param return_models] false it heals wounds only and no model comes back.
+static func reanimate(unit: UnitState, amount: int, units: Array, board: Rect2, return_models: bool = true) -> int:
 	var healed: int = 0
 	for m in unit.models:
 		var room: int = mini(unit.wounds_per_model - int(m["wounds"]), amount - healed)
 		if room > 0:
 			m["wounds"] = int(m["wounds"]) + room
 			healed += room
-	while healed < amount and unit.model_count() < unit.starting_strength and not unit.is_destroyed():
+	while return_models and healed < amount and unit.model_count() < unit.starting_strength and not unit.is_destroyed():
 		var spot: Variant = _free_spot(unit, units, board)
 		if spot == null:
 			break

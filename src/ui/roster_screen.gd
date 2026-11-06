@@ -23,9 +23,9 @@ var _web_callback: JavaScriptObject
 var _extra_path: String = ""
 
 
-func setup(extra_path: String = "") -> void:
+func setup(extra_path: String = "", local: bool = true) -> void:
 	_extra_path = extra_path
-	_armies = ArmyLoader.load_all(extra_path)
+	_armies = ArmyLoader.load_all(extra_path, local)
 	_build()
 	for side in range(2):
 		_fill_army_options(side)

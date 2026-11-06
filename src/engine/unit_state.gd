@@ -74,6 +74,60 @@ static func from_dict(d: Dictionary, unit_id: String, owner_id: int, origin: Vec
 	return u
 
 
+## Plain data for a save file: the profile as well as the state, so a save does not depend on the
+## army file it came from. Vectors are [x, y], which survives JSON.
+func to_save() -> Dictionary:
+	var model_rows: Array = []
+	for m in models:
+		model_rows.append({"pos": [m["pos"].x, m["pos"].y], "wounds": m["wounds"], "character": m["character"]})
+	var weapon_rows: Array = []
+	for w in weapons:
+		weapon_rows.append(w.to_save())
+	return {"id": id, "name": unit_name, "owner": owner, "toughness": toughness, "save": save, "invuln": invuln,
+		"fnp": fnp, "wounds_per_model": wounds_per_model, "move": move, "oc": objective_control,
+		"leadership": leadership, "base_radius": base_radius, "keywords": keywords.duplicate(),
+		"weapons": weapon_rows, "starting_strength": starting_strength, "battle_shocked": battle_shocked,
+		"abilities": abilities.duplicate(), "faction_abilities": faction_abilities.duplicate(),
+		"deadly_demise": deadly_demise, "last_position": [last_position.x, last_position.y],
+		"advanced": advanced, "fell_back": fell_back, "charged": charged, "last_fired_turn": last_fired_turn,
+		"max_model_move": max_model_move, "one_shot_used": one_shot_used.duplicate(), "models": model_rows}
+
+
+## Rebuild from [method to_save]. Numbers may arrive as floats from JSON, so each is cast.
+static func from_save(d: Dictionary) -> UnitState:
+	var u := UnitState.new()
+	u.id = str(d["id"])
+	u.unit_name = str(d["name"])
+	u.owner = int(d["owner"])
+	u.toughness = int(d["toughness"])
+	u.save = int(d["save"])
+	u.invuln = int(d["invuln"])
+	u.fnp = int(d["fnp"])
+	u.wounds_per_model = int(d["wounds_per_model"])
+	u.move = float(d["move"])
+	u.objective_control = int(d["oc"])
+	u.leadership = int(d["leadership"])
+	u.base_radius = float(d["base_radius"])
+	u.keywords.assign(d["keywords"])
+	u.starting_strength = int(d["starting_strength"])
+	u.battle_shocked = bool(d["battle_shocked"])
+	u.abilities.assign(d["abilities"])
+	u.faction_abilities.assign(d["faction_abilities"])
+	u.deadly_demise = str(d["deadly_demise"])
+	u.last_position = Vector2(float(d["last_position"][0]), float(d["last_position"][1]))
+	u.advanced = bool(d["advanced"])
+	u.fell_back = bool(d["fell_back"])
+	u.charged = bool(d["charged"])
+	u.last_fired_turn = int(d["last_fired_turn"])
+	u.max_model_move = float(d["max_model_move"])
+	u.one_shot_used.assign(d["one_shot_used"])
+	for w in d["weapons"]:
+		u.weapons.append(Weapon.from_save(w))
+	for m in d["models"]:
+		u.models.append({"pos": Vector2(float(m["pos"][0]), float(m["pos"][1])), "wounds": int(m["wounds"]), "character": bool(m["character"])})
+	return u
+
+
 func model_count() -> int:
 	return models.size()
 

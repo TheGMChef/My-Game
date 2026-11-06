@@ -3,7 +3,7 @@ extends VBoxContainer
 ## Scores, round and current phase for the narrow right-hand column on a phone in landscape.
 
 signal info_pressed
-signal settings_pressed
+signal menu_pressed
 
 var _vp: Array[Label] = []
 var _round: Label
@@ -42,8 +42,8 @@ func _init() -> void:
 
 	var tools := HBoxContainer.new()
 	add_child(tools)
-	tools.add_child(_tool(UIText.t("button.info"), func() -> void: info_pressed.emit()))
-	tools.add_child(_tool(UIText.t("button.settings"), func() -> void: settings_pressed.emit()))
+	tools.add_child(_tool("panel", "tip.panel", func() -> void: info_pressed.emit()))
+	tools.add_child(_tool("menu", "tip.menu", func() -> void: menu_pressed.emit()))
 
 
 func _score() -> Label:
@@ -53,18 +53,15 @@ func _score() -> Label:
 	return l
 
 
-func _tool(text: String, handler: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size.y = UITokens.HIT
+func _tool(icon_name: String, tip_key: String, handler: Callable) -> Button:
+	var b: Button = TopBar.make_icon_button(icon_name, tip_key, handler)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.pressed.connect(handler)
 	return b
 
 
-func refresh(round_no: int, total_rounds: int, phase: String, vp: Array) -> void:
+func refresh(round_no: int, total_rounds: int, phase: String, vp: Array, over: bool = false) -> void:
 	_round.text = UIText.t("hud.round_short", [round_no, total_rounds])
-	_phase.text = UIText.t("rail." + phase)
-	_count.text = "%d/%d" % [TopBar.PHASES.find(phase) + 1, TopBar.PHASES.size()]
+	_phase.text = UIText.t("hud.battle_over") if over else UIText.t("rail." + phase)
+	_count.text = "" if over else "%d/%d" % [TopBar.PHASES.find(phase) + 1, TopBar.PHASES.size()]
 	_vp[0].text = str(vp[0])
 	_vp[1].text = str(vp[1])

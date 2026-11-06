@@ -3,7 +3,7 @@ extends PanelContainer
 ## Wordmark, round, phase rail and scores. Display only: it is told what to show.
 
 signal info_pressed
-signal settings_pressed
+signal menu_pressed
 
 const PHASES: Array[String] = ["command", "movement", "shooting", "charge", "fight"]
 
@@ -15,7 +15,7 @@ var _vp: Array[Label] = []
 var _cp: Array[Label] = []
 var _who: Array[Label] = []
 var _info: Button
-var _settings: Button
+var _menu: Button
 var _compact: bool = false
 var _tiny: bool = false
 
@@ -43,10 +43,10 @@ func _init() -> void:
 
 	row.add_child(_build_score(0))
 	row.add_child(_build_score(1))
-	_info = _bar_button(UIText.t("button.info"), func() -> void: info_pressed.emit())
+	_info = make_icon_button("panel", "tip.panel", func() -> void: info_pressed.emit())
 	row.add_child(_info)
-	_settings = _bar_button(UIText.t("button.settings"), func() -> void: settings_pressed.emit())
-	row.add_child(_settings)
+	_menu = make_icon_button("menu", "tip.menu", func() -> void: menu_pressed.emit())
+	row.add_child(_menu)
 
 
 ## The MUSTER/ wordmark, shared by the bars, the roster and the title screen.
@@ -106,9 +106,12 @@ func _build_score(side: int) -> HBoxContainer:
 	return box
 
 
-func _bar_button(text: String, handler: Callable) -> Button:
+## A square vector-icon button, shared by the top bar and the phone column.
+static func make_icon_button(icon_name: String, tip_key: String, handler: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
+	b.icon = UIIcons.get_icon(icon_name, UITokens.INK, 20)
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.tooltip_text = UIText.t(tip_key)
 	b.custom_minimum_size = Vector2(UITokens.HIT, UITokens.HIT)
 	b.pressed.connect(handler)
 	return b
@@ -125,9 +128,11 @@ func set_density(compact: bool, tiny: bool, show_info: bool) -> void:
 		_who[side].visible = not tiny
 
 
-func refresh(round_no: int, total_rounds: int, my_turn: bool, phase: String, cp: Array, vp: Array) -> void:
+func refresh(round_no: int, total_rounds: int, my_turn: bool, phase: String, cp: Array, vp: Array, over: bool = false) -> void:
 	var turn: String = UIText.t("side.you_turn") if my_turn else UIText.t("side.ai_turn")
-	if _tiny:
+	if over:
+		_round.text = UIText.t("hud.battle_over")
+	elif _tiny:
 		_round.text = UIText.t("hud.round_short", [round_no, total_rounds])
 	elif _compact:
 		_round.text = turn
@@ -137,7 +142,7 @@ func refresh(round_no: int, total_rounds: int, my_turn: bool, phase: String, cp:
 	for i in range(PHASES.size()):
 		var on: bool = i == current
 		_steps[i].theme_type_variation = "StepOn" if on else "StepOff"
-		_steps[i].visible = on or not _compact
+		_steps[i].visible = not over and (on or not _compact)
 		var ink: Color = UITokens.ON_ACTION if on else (UITokens.INK_DIM if i < current else UITokens.INK_FAINT)
 		for lab in _step_labels[i]:
 			(lab as Label).add_theme_color_override("font_color", ink)

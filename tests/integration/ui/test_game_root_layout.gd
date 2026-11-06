@@ -96,6 +96,8 @@ func test_unit_view_carries_the_six_datasheet_stats() -> void:
 func test_title_screen_comes_first_and_leads_to_the_roster() -> void:
 	# Arrange
 	var r: GameRoot = auto_free(load("res://scenes/main.tscn").instantiate())
+	r.persist = false
+	r.placeholder_only = true
 	add_child(r)
 	var title: TitleScreen = null
 	for c in r.get_children():

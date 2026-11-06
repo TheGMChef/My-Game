@@ -8,6 +8,10 @@ extends RefCounted
 
 const DEADLY_DEMISE_RANGE := 6.0
 const REANIMATION_DICE := "D3"
+const SAVE_VERSION := 1
+const SAVE_KEYS: Array[String] = ["version", "scenario", "units", "unit_names", "flow", "dice", "vp", "turn_no",
+	"ai_sides", "events", "log", "fight_stage", "counter", "reanimate_models", "moved", "shot", "charge", "charge_done",
+	"advance_roll", "piled", "consolidated", "eligible_to_fight", "shadow_used", "observers", "spotted", "fight_seq", "undo"]
 
 var _shadow_used: Array[int] = []
 var _observers: Array = []
@@ -30,6 +34,10 @@ var events: Array[Dictionary] = []
 var log: Array[String] = []
 ## "pile_in", "fight" or "consolidate" while in the Fight phase, else "".
 var fight_stage: String = ""
+## Reanimation Protocols brings destroyed models back. False means it heals wounds only.
+var reanimate_models: bool = true
+## Unit id -> name for every unit in the battle, destroyed ones included.
+var unit_names: Dictionary = {}
 
 var _counter: int = 0
 var _moved: Array = []
@@ -41,6 +49,7 @@ var _piled: Array = []
 var _consolidated: Array = []
 var _eligible_to_fight: Array = []
 var _seq: FightSequencer
+var _undo: Dictionary = {}         # the last confirmed move, see cmd_undo_move
 
 
 func _init(scenario_data: Dictionary, armies: Array, seed_value: int) -> void:
@@ -67,7 +76,9 @@ func _deploy(side: int, army: Dictionary) -> void:
 	for i in range(count):
 		var y: float = float(r[1]) + 3.0 + float(i) * (board.size.y - 6.0) / float(maxi(count, 1))
 		_counter += 1
-		units.append(UnitState.from_dict(army["units"][i], "%s_%d" % [zone_key, _counter], side, Vector2(x, y)))
+		var u: UnitState = UnitState.from_dict(army["units"][i], "%s_%d" % [zone_key, _counter], side, Vector2(x, y))
+		units.append(u)
+		unit_names[u.id] = u.unit_name
 
 
 func living(side: int) -> Array:
@@ -108,7 +119,7 @@ func _deadly_demise(u: UnitState) -> void:
 func _reanimation(side: int) -> void:
 	for u in living(side):
 		if u.faction_abilities.has("REANIMATION PROTOCOLS"):
-			var healed: int = ArmyRules.reanimate(u, dice.roll(REANIMATION_DICE), units, board)
+			var healed: int = ArmyRules.reanimate(u, dice.roll(REANIMATION_DICE), units, board, reanimate_models)
 			if healed > 0:
 				_emit("reanimated", side, {"unit": u.id, "wounds": healed})
 
@@ -181,6 +192,7 @@ func begin_turn() -> void:
 	_piled.clear()
 	_consolidated.clear()
 	_eligible_to_fight.clear()
+	_undo = {}
 	fight_stage = ""
 	var side: int = flow.active_player
 	var before: Array = []
@@ -277,10 +289,51 @@ func cmd_move(u: UnitState, positions: Array[Vector2], mode: String) -> Dictiona
 	if not r["ok"]:
 		return r
 	var before: Array[Vector2] = _positions(u)
+	var flags: Dictionary = {"advanced": u.advanced, "fell_back": u.fell_back, "max_model_move": u.max_model_move}
 	UnitRules.apply_move(u, positions, mode)
 	_moved.append(u)
 	_emit("move", u.owner, {"unit": u.id, "mode": mode, "from": before, "to": positions.duplicate()})
+	_undo = {"unit": u, "from": before, "flags": flags, "events": events.size()}
 	return r
+
+
+## Why the last move cannot be undone, or "" if it can.
+func _undo_problem() -> String:
+	if is_over():
+		return "the battle is over"
+	if flow.phase() != "movement":
+		return "moves can only be undone in the Movement phase"
+	if _undo.is_empty():
+		return "there is no move to undo"
+	if events.size() != int(_undo["events"]):
+		return "something else has happened since that move"
+	if _advance_roll.has(_undo["unit"]):
+		return "a move with a dice roll cannot be undone"
+	return ""
+
+
+func can_undo_move() -> bool:
+	return _undo_problem() == ""
+
+
+## Take back the last confirmed move, if nothing has happened since and no roll was involved.
+## The move stays in [member events], followed by an "undo_move" event, so a log reads in order.
+func cmd_undo_move() -> Dictionary:
+	var problem: String = _undo_problem()
+	if problem != "":
+		return _no(problem)
+	var u: UnitState = _undo["unit"]
+	var before: Array[Vector2] = _undo["from"]
+	var moved_to: Array[Vector2] = _positions(u)
+	for i in range(before.size()):
+		u.models[i]["pos"] = before[i]
+	u.advanced = bool(_undo["flags"]["advanced"])
+	u.fell_back = bool(_undo["flags"]["fell_back"])
+	u.max_model_move = float(_undo["flags"]["max_model_move"])
+	_moved.erase(u)
+	_undo = {}
+	_emit("undo_move", u.owner, {"unit": u.id, "from": moved_to, "to": before.duplicate()})
+	return _yes()
 
 
 func cmd_hold(u: UnitState) -> Dictionary:
@@ -611,6 +664,136 @@ func play_all() -> Dictionary:
 		play_turn()
 		guard += 1
 	return {"vp": vp.duplicate(), "survivors": [living(0).size(), living(1).size()], "rounds": flow.round_no}
+
+
+# ---------------------------------------------------------------- save and resume
+
+## Everything needed to carry on from this exact moment, as plain data that survives JSON (write
+## it with full precision, see [SaveFile]). Units are stored by id wherever one unit refers to another.
+func to_save() -> Dictionary:
+	var charge_rows: Dictionary = {}
+	for u: UnitState in _charge:
+		charge_rows[u.id] = {"roll": _charge[u]["roll"], "targets": Battle._ids(_charge[u]["targets"])}
+	var advance_rows: Dictionary = {}
+	for u: UnitState in _advance_roll:
+		advance_rows[u.id] = _advance_roll[u]
+	var spotted_rows: Dictionary = {}
+	for t: UnitState in _spotted:
+		spotted_rows[t.id] = (_spotted[t] as UnitState).id
+	var event_rows: Array = []
+	for e in events:
+		event_rows.append(Battle._event_to_save(e))
+	var unit_rows: Array = []
+	for u: UnitState in units:
+		unit_rows.append(u.to_save())
+	var undo_row: Dictionary = {}
+	if not _undo.is_empty():
+		undo_row = {"unit": (_undo["unit"] as UnitState).id, "from": Battle._points_to_save(_undo["from"]),
+			"flags": _undo["flags"].duplicate(), "events": _undo["events"]}
+	return {"version": SAVE_VERSION, "scenario": scenario.duplicate(true), "units": unit_rows,
+		"unit_names": unit_names.duplicate(), "flow": flow.to_save(), "dice": dice.to_save(), "vp": vp.duplicate(),
+		"turn_no": turn_no, "ai_sides": ai_sides.duplicate(), "events": event_rows, "log": log.duplicate(),
+		"fight_stage": fight_stage, "counter": _counter, "reanimate_models": reanimate_models,
+		"moved": Battle._ids(_moved), "shot": Battle._ids(_shot), "charge": charge_rows,
+		"charge_done": Battle._ids(_charge_done), "advance_roll": advance_rows, "piled": Battle._ids(_piled),
+		"consolidated": Battle._ids(_consolidated), "eligible_to_fight": Battle._ids(_eligible_to_fight),
+		"shadow_used": _shadow_used.duplicate(), "observers": Battle._ids(_observers), "spotted": spotted_rows,
+		"fight_seq": {} if _seq == null else _seq.to_save(), "undo": undo_row}
+
+
+## Rebuild a battle from [method to_save]. Returns null if [param data] is not a save this version can read.
+static func from_save(data: Dictionary) -> Battle:
+	if int(data.get("version", 0)) != SAVE_VERSION or not data.has_all(SAVE_KEYS):
+		return null
+	var empty: Array = [{"units": []}, {"units": []}]
+	var b := Battle.new(data["scenario"], empty, 1)
+	for row in data["units"]:
+		b.units.append(UnitState.from_save(row))
+	b.unit_names = data["unit_names"].duplicate()
+	b.flow = TurnFlow.from_save(data["flow"])
+	b.dice = Dice.from_save(data["dice"])
+	for side in range(2):
+		b.vp[side] = int(data["vp"][side])
+		b.ai_sides[side] = bool(data["ai_sides"][side])
+	b.turn_no = int(data["turn_no"])
+	for row in data["events"]:
+		b.events.append(Battle._event_from_save(row))
+	b.log.assign(data["log"])
+	b.fight_stage = str(data["fight_stage"])
+	b._counter = int(data["counter"])
+	b.reanimate_models = bool(data["reanimate_models"])
+	b._moved = b._units_of(data["moved"])
+	b._shot = b._units_of(data["shot"])
+	b._charge_done = b._units_of(data["charge_done"])
+	b._piled = b._units_of(data["piled"])
+	b._consolidated = b._units_of(data["consolidated"])
+	b._eligible_to_fight = b._units_of(data["eligible_to_fight"])
+	b._observers = b._units_of(data["observers"])
+	for id in data["charge"]:
+		var targets: Array[UnitState] = []
+		targets.assign(b._units_of(data["charge"][id]["targets"]))
+		b._charge[b.unit_by_id(id)] = {"roll": int(data["charge"][id]["roll"]), "targets": targets}
+	for id in data["advance_roll"]:
+		b._advance_roll[b.unit_by_id(id)] = int(data["advance_roll"][id])
+	for side in data["shadow_used"]:
+		b._shadow_used.append(int(side))
+	for id in data["spotted"]:
+		b._spotted[b.unit_by_id(id)] = b.unit_by_id(data["spotted"][id])
+	if not (data["fight_seq"] as Dictionary).is_empty():
+		b._seq = FightSequencer.from_save(data["fight_seq"], b.units)
+	if not (data["undo"] as Dictionary).is_empty():
+		var undo: Dictionary = data["undo"]
+		b._undo = {"unit": b.unit_by_id(undo["unit"]), "from": Battle._points_from_save(undo["from"]),
+			"flags": undo["flags"].duplicate(), "events": int(undo["events"])}
+	return b
+
+
+func _units_of(ids: Array) -> Array:
+	var out: Array = []
+	for id in ids:
+		var u: UnitState = unit_by_id(id)
+		if u != null:
+			out.append(u)
+	return out
+
+
+static func _ids(list: Array) -> Array:
+	var out: Array = []
+	for u: UnitState in list:
+		out.append(u.id)
+	return out
+
+
+static func _points_to_save(points: Array) -> Array:
+	var out: Array = []
+	for p: Vector2 in points:
+		out.append([p.x, p.y])
+	return out
+
+
+static func _points_from_save(rows: Array) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for r in rows:
+		out.append(Vector2(float(r[0]), float(r[1])))
+	return out
+
+
+static func _event_to_save(e: Dictionary) -> Dictionary:
+	var out: Dictionary = e.duplicate(true)
+	for key in ["from", "to"]:
+		if out.has(key):
+			out[key] = Battle._points_to_save(e[key])
+	return out
+
+
+static func _event_from_save(row: Dictionary) -> Dictionary:
+	var out: Dictionary = row.duplicate(true)
+	out["turn"] = int(row["turn"])
+	out["side"] = int(row["side"])
+	for key in ["from", "to"]:
+		if out.has(key):
+			out[key] = Battle._points_from_save(row[key])
+	return out
 
 
 # ---------------------------------------------------------------- helpers

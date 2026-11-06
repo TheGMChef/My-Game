@@ -70,3 +70,16 @@ func test_order_of_results_matches_order_of_entries() -> void:
 
 	# Assert
 	assert_float(spots[0].position.x).is_less(spots[1].position.x)
+
+
+func test_a_plate_stays_out_of_a_keep_clear_area() -> void:
+	# Arrange: the spot above the unit is taken by the board tools
+	var bounds := Rect2(0, 0, 400, 400)
+	var entry: Dictionary = {"size": Vector2(100, 22), "anchor": Rect2(150, 150, 40, 40), "first": false}
+	var tools: Array[Rect2] = [Rect2(100, 100, 150, 50)]
+
+	# Act
+	var spot: Rect2 = PlateLayout.arrange([entry], bounds, tools)[0]
+
+	# Assert
+	assert_bool(spot.intersects(tools[0])).is_false()

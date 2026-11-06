@@ -23,6 +23,24 @@ func phase() -> String:
 	return PHASES[_phase_index]
 
 
+## Plain data for a save file.
+func to_save() -> Dictionary:
+	return {"round_no": round_no, "active_player": active_player, "finished": finished,
+		"command_points": command_points.duplicate(), "phase_index": _phase_index, "total_rounds": _total_rounds}
+
+
+## Rebuild from [method to_save].
+static func from_save(d: Dictionary) -> TurnFlow:
+	var out := TurnFlow.new(int(d["total_rounds"]))
+	out.round_no = int(d["round_no"])
+	out.active_player = int(d["active_player"])
+	out.finished = bool(d["finished"])
+	out._phase_index = int(d["phase_index"])
+	for i in range(out.command_points.size()):
+		out.command_points[i] = int(d["command_points"][i])
+	return out
+
+
 ## Move to the next phase, passing the turn or starting the next round when needed.
 func advance() -> void:
 	if finished:

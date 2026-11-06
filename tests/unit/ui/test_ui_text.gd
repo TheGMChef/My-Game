@@ -28,5 +28,20 @@ func test_dynamic_prefix_keys_exist() -> void:
 	for s in ["command", "movement", "shooting", "charge", "fight_pile_in", "fight_fight", "fight_consolidate"]:
 		assert_bool(UIText.has_key("help.title." + s)).is_true()
 		assert_bool(UIText.has_key("help.body." + s)).is_true()
+		assert_bool(UIText.has_key("help.short." + s)).is_true()
+		assert_bool(UIText.has_key("hint.select." + s)).is_true()
 	for m in ["normal", "advance", "fall_back"]:
 		assert_bool(UIText.has_key("log.move." + m)).is_true()
+
+
+func test_settings_and_guide_keys_exist() -> void:
+	for tab in SettingsDialog.TABS:
+		assert_bool(UIText.has_key("settings.tab." + tab)).is_true()
+	for speed in UISettings.AI_SPEED_NAMES:
+		assert_bool(UIText.has_key("settings.ai_speed." + speed)).is_true()
+	for row in SettingsDialog.CONTROL_ROWS:
+		for column in ["action", "keyboard", "gamepad"]:
+			assert_bool(UIText.has_key("controls.%s.%s" % [row, column])).is_true()
+	for section in HowToPlay.SECTIONS:
+		assert_bool(UIText.has_key("howto.%s.title" % section)).is_true()
+		assert_bool(UIText.has_key("howto.%s.body" % section)).is_true()

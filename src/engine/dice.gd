@@ -20,6 +20,25 @@ func _init(seed_value: int = 1, scripted: Array[int] = []) -> void:
 		_use_script = true
 
 
+## Plain data for a save file. The seed and state are strings because they are 64-bit integers,
+## which a JSON number cannot hold exactly.
+func to_save() -> Dictionary:
+	return {"seed": str(_rng.seed), "state": str(_rng.state), "rolls_made": rolls_made,
+		"scripted": _scripted.duplicate(), "use_script": _use_script}
+
+
+## Rebuild dice from [method to_save], so the next rolls are the ones the saved dice would make.
+static func from_save(d: Dictionary) -> Dice:
+	var out := Dice.new()
+	out._rng.seed = str(d["seed"]).to_int()
+	out._rng.state = str(d["state"]).to_int()    # after the seed: setting the seed resets the state
+	out.rolls_made = int(d["rolls_made"])
+	out._use_script = bool(d["use_script"])
+	for v in d["scripted"]:
+		out._scripted.append(int(v))
+	return out
+
+
 ## Roll one six-sided die.
 func d6() -> int:
 	rolls_made += 1

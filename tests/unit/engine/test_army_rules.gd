@@ -100,6 +100,50 @@ func test_battle_runs_reanimation_at_the_end_of_your_command_phase() -> void:
 	assert_int(u.models[0]["wounds"]).is_equal(4)
 
 
+func test_with_return_models_off_reanimation_heals_wounds_only() -> void:
+	# Arrange
+	var u := _unit(0, {"wounds": 2, "models": 3, "faction_abilities": ["REANIMATION PROTOCOLS"]})
+	u.models.remove_at(2)
+	u.models[0]["wounds"] = 1
+
+	# Act
+	var healed: int = ArmyRules.reanimate(u, 3, [u], Rect2(0, 0, 44, 30), false)
+
+	# Assert
+	assert_int(healed).is_equal(1)
+	assert_int(u.model_count()).is_equal(2)
+	assert_int(u.models[0]["wounds"]).is_equal(2)
+
+
+func test_battle_setting_off_brings_no_models_back() -> void:
+	# Arrange: scripted D3 from a roll of 6 is 3
+	var b := _battle([6])
+	var u := _unit(b.flow.active_player, {"models": 3, "faction_abilities": ["REANIMATION PROTOCOLS"]})
+	u.models.remove_at(2)
+	b.units = [u]
+	b.reanimate_models = false
+
+	# Act
+	b.begin_turn()
+
+	# Assert
+	assert_int(u.model_count()).is_equal(2)
+
+
+func test_battle_setting_on_brings_models_back_by_default() -> void:
+	# Arrange: scripted D3 from a roll of 6 is 3
+	var b := _battle([6])
+	var u := _unit(b.flow.active_player, {"models": 3, "faction_abilities": ["REANIMATION PROTOCOLS"]})
+	u.models.remove_at(2)
+	b.units = [u]
+
+	# Act
+	b.begin_turn()
+
+	# Assert
+	assert_int(u.model_count()).is_equal(3)
+
+
 # --- Synapse ---
 
 func test_tyranids_within_six_inches_of_synapse_are_in_range() -> void:

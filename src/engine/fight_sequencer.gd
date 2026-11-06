@@ -31,6 +31,30 @@ func begin(units: Array, active_player: int) -> void:
 	_settle()
 
 
+## Plain data for a save file. Units are stored by id; destroyed ones no longer matter.
+func to_save() -> Dictionary:
+	return {"finished": finished, "chooser": chooser, "active_player": _active_player,
+		"in_fights_first": _in_fights_first,
+		"selected": _selected.map(func(u: UnitState) -> String: return u.id),
+		"engaged_at_start": _engaged_at_start.map(func(u: UnitState) -> String: return u.id)}
+
+
+## Rebuild from [method to_save] against the battle's [param units].
+static func from_save(d: Dictionary, units: Array) -> FightSequencer:
+	var out := FightSequencer.new()
+	out._units = units
+	out.finished = bool(d["finished"])
+	out.chooser = int(d["chooser"])
+	out._active_player = int(d["active_player"])
+	out._in_fights_first = bool(d["in_fights_first"])
+	for u: UnitState in units:
+		if (d["selected"] as Array).has(u.id):
+			out._selected.append(u)
+		if (d["engaged_at_start"] as Array).has(u.id):
+			out._engaged_at_start.append(u)
+	return out
+
+
 ## Units the current chooser may select right now.
 func options() -> Array[UnitState]:
 	return _eligible(chooser, _in_fights_first)

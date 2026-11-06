@@ -32,6 +32,10 @@ var _info_open: bool = false
 var _game_over_shown: bool = false
 var _log_lines: Array[Dictionary] = []
 var _begun_key: String = ""
+var _weapon_rings: Dictionary = {}       # unit id -> indices of weapons with a ring on the board
+var _pause_pending: bool = false         # the menu was asked for while something was playing
+var _playing: int = 0                    # event playbacks in progress
+var _run_id: int = 0                     # changes when a battle is left, so a running AI loop stops
 
 # Nodes
 var _top_bar: TopBar
@@ -41,21 +45,27 @@ var _phone_box: VBoxContainer
 var _action_bar: ActionBar
 var _board_col: VBoxContainer
 var _side: SidePanel
-var _settings_panel: PanelContainer
-var _over_panel: PanelContainer
+var _over_panel: DialogBox
 var _over_title: Label
 var _over_vp: Array[Label] = []
-var _settings_close: Button
 var _play_again: Button
-var _scrim: ColorRect
-var _zoom_box: VBoxContainer
+var _toolbar: BoardToolbar
+var _ui_root: VBoxContainer
 var _body: BoxContainer
+var _title: TitleScreen
+var _pause: PauseMenu
 var _portrait: bool = false
 var _phone: bool = false
 var skip_roster: bool = false    ## tests and tools set this to go straight to the placeholder battle
 var skip_title: bool = false     ## tools set this to open on the roster
 var battle_seed: int = -1         ## tools set this to repeat a game exactly
 var armies_override: Array = []   ## tools set this to play skip_roster games with other armies
+## False for tests and tools: no settings or save file is read or written. skip_roster and
+## skip_title turn it off too.
+var persist: bool = true
+var show_continue: bool = false   ## tools set this to show Continue without a save
+var save_path: String = SaveFile.PATH    ## tests point this at a throwaway file
+var placeholder_only: bool = false    ## tools set this to keep real army names off the roster
 var _args: Dictionary = {}
 var _armies_in_play: Array = []
 var _roster: RosterScreen
@@ -63,7 +73,10 @@ var _roster: RosterScreen
 
 func _ready() -> void:
 	theme = UIThemeBuilder.build()
-	settings.load_from_disk()
+	if skip_roster or skip_title:
+		persist = false
+	if persist:
+		settings.load_from_disk()
 	_setup_input_actions()
 	_args = _parse_args()
 	get_window().size_changed.connect(_apply_scale)
@@ -81,18 +94,50 @@ func _placeholder_armies() -> Array:
 
 
 func _show_title() -> void:
-	var title := TitleScreen.new()
-	add_child(title)
-	title.start_pressed.connect(func() -> void:
-		title.queue_free()
+	_title = TitleScreen.new()
+	_title.has_save = show_continue or (persist and SaveFile.usable(save_path))
+	_title.can_quit = OS.has_feature("pc") and not OS.has_feature("web")
+	add_child(_title)
+	_title.start_pressed.connect(func() -> void:
+		_close_title()
 		_show_roster())
+	_title.continue_pressed.connect(_on_continue_pressed)
+	_title.settings_pressed.connect(_open_settings)
+	_title.how_to_pressed.connect(_open_how_to)
+	_title.quit_pressed.connect(func() -> void: get_tree().quit())
+
+
+func _close_title() -> void:
+	_title.queue_free()
+	_title = null
+
+
+func _on_continue_pressed() -> void:
+	var data: Dictionary = SaveFile.read(save_path)
+	var loaded: Battle = Battle.from_save(data.get("battle", {}))
+	if loaded == null:
+		SaveFile.erase(save_path)
+		_close_title()
+		_show_title()
+		return
+	_close_title()
+	_resume_battle(loaded, data["armies"])
+
+
+## Carry on a saved battle. The save was made after begin_turn, so the turn must not begin again.
+func _resume_battle(saved: Battle, armies: Array) -> void:
+	_armies_in_play = armies
+	battle = saved
+	_adopt_battle()
+	_begun_key = _turn_key()
+	_enter_battle()
 
 
 ## Army and unit selection comes before the battle, which is built once it is confirmed.
 func _show_roster() -> void:
 	_roster = RosterScreen.new()
 	add_child(_roster)
-	_roster.setup(str(_args.get("armies", "")))
+	_roster.setup(str(_args.get("armies", "")), not placeholder_only)
 	_roster.started.connect(func(armies: Array) -> void:
 		_roster.queue_free()
 		_roster = null
@@ -102,6 +147,10 @@ func _show_roster() -> void:
 func _start_battle(armies: Array) -> void:
 	_armies_in_play = armies
 	_load_battle(armies, battle_seed if battle_seed >= 0 else int(_args.get("seed", Time.get_ticks_msec() % 100000)))
+	_enter_battle()
+
+
+func _enter_battle() -> void:
 	_build_ui()
 	_apply_scale()
 	board.battle = battle
@@ -135,12 +184,18 @@ func _load_battle(armies: Array, seed_value: int) -> void:
 	var sc: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/scenario_clash_of_patrols.json"))
 	battle = Battle.new(sc, armies, seed_value)
 	battle.ai_sides = [false, true]
-	_names.clear()
-	for u in battle.units:
-		_names[u.id] = u.unit_name
+	_adopt_battle()
+
+
+## Reset everything the interface keeps about a battle for a new or resumed one.
+func _adopt_battle() -> void:
+	battle.reanimate_models = settings.reanimate_models
+	_names = battle.unit_names.duplicate()
 	_event_cursor = 0
 	_log_lines.clear()
 	_game_over_shown = false
+	_begun_key = ""
+	_weapon_rings.clear()
 
 
 # ---------------------------------------------------------------- input actions
@@ -157,6 +212,7 @@ func _setup_input_actions() -> void:
 	_add_action("nudge_down", [_key(KEY_DOWN), _pad_axis(JOY_AXIS_LEFT_Y, 1.0)])
 	_add_action("zoom_in", [_key(KEY_EQUAL), _key(KEY_KP_ADD)])
 	_add_action("zoom_out", [_key(KEY_MINUS), _key(KEY_KP_SUBTRACT)])
+	_add_action("ruler", [_key(KEY_R)])
 
 
 func _add_action(action: String, events: Array) -> void:
@@ -186,20 +242,24 @@ func _pad_axis(axis: JoyAxis, value: float) -> InputEventJoypadMotion:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if battle == null or board == null or _dialog_open():
+		return
 	if _busy:
 		if event.is_action_pressed("cancel_order") or event.is_action_pressed("confirm_order"):
 			_skip = true
 			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("next_phase"):
-		_on_next_pressed()
+		_request_next()
 	elif event.is_action_pressed("confirm_order"):
 		_on_confirm_pressed()
 	elif event.is_action_pressed("cancel_order"):
-		if _settings_panel.visible:
-			_set_settings_visible(false)
+		if _selected == null and _target == null and _delta == Vector2.ZERO:
+			_request_pause()
 		else:
 			_on_cancel_pressed()
+	elif event.is_action_pressed("ruler"):
+		_set_ruler(not board.ruler_on)
 	elif event.is_action_pressed("cycle_next"):
 		_cycle_unit(1)
 	elif event.is_action_pressed("cycle_prev"):
@@ -219,20 +279,20 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", 0)
-	add_child(root)
+	_ui_root = VBoxContainer.new()
+	_ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ui_root.add_theme_constant_override("separation", 0)
+	add_child(_ui_root)
 
 	_top_bar = TopBar.new()
 	_top_bar.info_pressed.connect(_toggle_info)
-	_top_bar.settings_pressed.connect(func() -> void: _set_settings_visible(true))
-	root.add_child(_top_bar)
+	_top_bar.menu_pressed.connect(_request_pause)
+	_ui_root.add_child(_top_bar)
 
 	_body = BoxContainer.new()
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_body.add_theme_constant_override("separation", 0)
-	root.add_child(_body)
+	_ui_root.add_child(_body)
 
 	_board_col = VBoxContainer.new()
 	_board_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -247,11 +307,17 @@ func _build_ui() -> void:
 	board = BoardView.new()
 	board.set_anchors_preset(Control.PRESET_FULL_RECT)
 	board_holder.add_child(board)
-	_zoom_box = _build_zoom_box()
-	board_holder.add_child(_zoom_box)
+	_toolbar = BoardToolbar.new()
+	_toolbar.ruler_toggled.connect(_set_ruler)
+	_toolbar.clear_pressed.connect(func() -> void: board.clear_measurement())
+	_toolbar.zoom_in_pressed.connect(func() -> void: board.zoom_by(1.25))
+	_toolbar.zoom_out_pressed.connect(func() -> void: board.zoom_by(0.8))
+	_toolbar.fit_pressed.connect(func() -> void: board.reset_view())
+	board_holder.add_child(_toolbar)
+	board.measure_changed.connect(_show_ruler_state)
 
 	_action_bar = ActionBar.new()
-	_action_bar.next_pressed.connect(_on_next_pressed)
+	_action_bar.next_pressed.connect(_request_next)
 	_action_bar.skip_pressed.connect(func() -> void: _skip = true)
 	_board_col.add_child(_action_bar)
 
@@ -263,117 +329,24 @@ func _build_ui() -> void:
 	_phone_col.add_child(_phone_box)
 	_phone_hud = PhoneHud.new()
 	_phone_hud.info_pressed.connect(_toggle_info)
-	_phone_hud.settings_pressed.connect(func() -> void: _set_settings_visible(true))
+	_phone_hud.menu_pressed.connect(_request_pause)
 	_phone_box.add_child(_phone_hud)
 
 	_side = SidePanel.new()
+	_side.rules_pressed.connect(_open_rules)
+	_side.unit_row_pressed.connect(_on_unit_row_pressed)
+	_side.weapon_pressed.connect(_on_weapon_pressed)
 	_body.add_child(_side)
 
-	_scrim = ColorRect.new()
-	_scrim.color = UITokens.with_alpha(UITokens.VOID, 0.72)
-	_scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_scrim.visible = false
-	add_child(_scrim)
-	_settings_panel = _build_settings_panel()
-	add_child(_settings_panel)
 	_over_panel = _build_over_panel()
 	add_child(_over_panel)
 
 
-func _build_zoom_box() -> VBoxContainer:
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	box.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	box.offset_right = -UITokens.SPACE_3
-	box.offset_bottom = -UITokens.SPACE_3
-	box.add_theme_constant_override("separation", UITokens.SPACE_1)
-	for spec in [["plus", UIText.t("tip.zoom_in"), func() -> void: board.zoom_by(1.25)],
-			["minus", UIText.t("tip.zoom_out"), func() -> void: board.zoom_by(0.8)],
-			["fit", UIText.t("tip.zoom_fit"), func() -> void: board.reset_view()]]:
-		var b := _button("", spec[2])
-		b.icon = UIIcons.get_icon(spec[0], UITokens.INK, 20)
-		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		b.tooltip_text = spec[1]
-		box.add_child(b)
-	return box
-
-
-func _button(text: String, handler: Callable, primary: bool = false) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size = Vector2(UITokens.HIT, UITokens.HIT)
-	if primary:
-		b.theme_type_variation = "PrimaryButton"
-		b.icon = UIIcons.stripe(UITokens.ON_ACTION)
-		b.size_flags_horizontal = Control.SIZE_SHRINK_END
-	b.pressed.connect(handler)
-	return b
-
-
-func _build_dialog(width: float) -> PanelContainer:
-	var p := PanelContainer.new()
-	p.theme_type_variation = "Dialog"
-	p.visible = false
-	p.set_anchors_preset(Control.PRESET_CENTER)
-	p.custom_minimum_size = Vector2(width, 0)
-	p.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	p.grow_vertical = Control.GROW_DIRECTION_BOTH
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", UITokens.SPACE_3)
-	p.add_child(col)
-	return p
-
-
-func _build_settings_panel() -> PanelContainer:
-	var p := _build_dialog(420.0)
-	var col: VBoxContainer = p.get_child(0)
-	var title := Label.new()
-	title.text = UIText.t("settings.title")
-	title.theme_type_variation = "LabelHeading"
-	col.add_child(title)
-
-	var size_row := HBoxContainer.new()
-	var size_label := Label.new()
-	size_label.text = UIText.t("settings.text_size")
-	size_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	size_row.add_child(size_label)
-	size_row.add_child(_button("A−", func() -> void: _change_text_size(-1)))
-	size_row.add_child(_button("A+", func() -> void: _change_text_size(1)))
-	col.add_child(size_row)
-
-	col.add_child(_check(UIText.t("settings.colour_blind"), settings.colour_blind, func(on: bool) -> void:
-		settings.colour_blind = on
-		_settings_changed()))
-	col.add_child(_check(UIText.t("settings.reduced_motion"), settings.reduced_motion, func(on: bool) -> void:
-		settings.reduced_motion = on
-		_settings_changed()))
-	col.add_child(_check(UIText.t("settings.engagement"), settings.show_engagement, func(on: bool) -> void:
-		settings.show_engagement = on
-		_settings_changed()))
-	col.add_child(_check(UIText.t("settings.coherency"), settings.show_coherency, func(on: bool) -> void:
-		settings.show_coherency = on
-		_settings_changed()))
-	col.add_child(_check(UIText.t("settings.objectives"), settings.show_objectives, func(on: bool) -> void:
-		settings.show_objectives = on
-		_settings_changed()))
-	_settings_close = _button(UIText.t("button.close"), func() -> void: _set_settings_visible(false), true)
-	col.add_child(_settings_close)
-	return p
-
-
-func _check(text: String, value: bool, handler: Callable) -> CheckBox:
-	var c := CheckBox.new()
-	c.text = text
-	c.button_pressed = value
-	c.custom_minimum_size.y = UITokens.HIT
-	c.toggled.connect(handler)
-	return c
-
-
-func _build_over_panel() -> PanelContainer:
-	var p := _build_dialog(460.0)
-	var col: VBoxContainer = p.get_child(0)
+func _build_over_panel() -> DialogBox:
+	var p := DialogBox.new("", 460.0)
+	p.cancellable = false
+	p.keep_alive = true
+	var col: VBoxContainer = p.body
 	col.add_child(TopBar.make_wordmark("LabelWordmarkSmall"))
 	_over_title = Label.new()
 	_over_title.theme_type_variation = "LabelTitle"
@@ -394,30 +367,160 @@ func _build_over_panel() -> PanelContainer:
 		box.add_child(vp)
 		_over_vp.append(vp)
 		scores.add_child(box)
-	_play_again = _button(UIText.t("button.play_again"), _restart, true)
-	col.add_child(_play_again)
+	_play_again = p.add_button(UIText.t("button.play_again"), _restart, true)
+	p.add_button(UIText.t("button.new_armies"), func() -> void:
+		_leave_battle()
+		_show_roster())
+	p.add_button(UIText.t("button.menu"), func() -> void:
+		_leave_battle()
+		_show_title())
 	return p
 
 
-func _set_settings_visible(on: bool) -> void:
-	_settings_panel.visible = on
-	_scrim.visible = on or _over_panel.visible
-	if on:
-		_settings_close.grab_focus()
-	else:
-		settings.save_to_disk()
+# ---------------------------------------------------------------- dialogs
+
+func _dialog_open() -> bool:
+	if _pause != null:
+		return true
+	for c in get_children():
+		if c is DialogBox and (c as DialogBox).visible:
+			return true
+	return false
+
+
+func _focus_back() -> void:
+	if _title != null:
+		_title.focus_first()
+	elif board != null and not _dialog_open():
 		board.grab_focus()
 
 
-func _change_text_size(step: int) -> void:
-	settings.text_scale_index = clampi(settings.text_scale_index + step, 0, UISettings.TEXT_SCALES.size() - 1)
-	_settings_changed()
+## Show a dialog, standing in for the pause menu if that is open. The menu comes back on close.
+func _show_dialog(d: DialogBox, first_focus: Control = null) -> void:
+	add_child(d)
+	if _pause != null:
+		_pause.visible = false
+	d.closed.connect(func() -> void:
+		if _pause != null:
+			_pause.open()
+		else:
+			_focus_back())
+	d.open(first_focus)
+
+
+func _open_settings() -> void:
+	var d := SettingsDialog.new(settings)
+	d.changed.connect(_settings_changed)
+	d.closed.connect(func() -> void:
+		if persist:
+			settings.save_to_disk())
+	_show_dialog(d)
+
+
+func _open_how_to() -> void:
+	_show_dialog(HowToPlay.new())
+
+
+## The full rules text for the current phase.
+func _open_rules() -> void:
+	var key: String = _rules_key()
+	var d := DialogBox.new(UIText.t("help.title." + key), 460.0)
+	d.scroll_with_keys = true
+	d.add_text(UIText.t("help.body." + key))
+	_show_dialog(d, d.add_button(UIText.t("button.close"), d.close, true))
+
+
+## Ask before something that cannot be taken back. Keyboard focus starts on the safe choice.
+func _ask(title_key: String, body: String, yes_key: String, on_yes: Callable) -> DialogBox:
+	var d := DialogBox.new(UIText.t(title_key), 420.0)
+	d.add_text(body)
+	var no: Button = d.add_button(UIText.t("button.cancel"), d.close)
+	d.add_button(UIText.t(yes_key), func() -> void:
+		on_yes.call()
+		d.close(), true)
+	_show_dialog(d, no)
+	return d
+
+
+## Open the menu now, or as soon as what is playing can stop safely.
+func _request_pause() -> void:
+	if battle == null or _dialog_open():
+		return
+	if _busy or _playing > 0:
+		_pause_pending = true
+		_skip = true
+		return
+	_open_pause()
+
+
+func _open_pause() -> void:
+	_pause = PauseMenu.new()
+	add_child(_pause)
+	_pause.rules_pressed.connect(_open_rules)
+	_pause.settings_pressed.connect(_open_settings)
+	_pause.restart_pressed.connect(func() -> void:
+		_ask("confirm.restart.title", UIText.t("confirm.restart.body"), "button.restart", func() -> void:
+			_end_pause()
+			_restart()))
+	_pause.quit_pressed.connect(func() -> void:
+		_ask("confirm.quit.title", UIText.t("confirm.quit.body"), "button.quit_to_menu", func() -> void:
+			_end_pause()
+			_leave_battle()
+			_show_title()))
+	_pause.closed.connect(func() -> void:
+		_pause = null
+		_focus_back())
+	_pause.open()
+
+
+func _end_pause() -> void:
+	if _pause != null:
+		_pause.visible = true
+		_pause.close()
+
+
+## Where a running AI loop or a playback may stop for the menu: nothing is half done here.
+func _pause_point() -> void:
+	if _pause_pending:
+		_pause_pending = false
+		_open_pause()
+	while _dialog_open():
+		await get_tree().process_frame
+	_skip = false
+
+
+## Back to no battle at all. The autosave stays, so Continue can pick it up.
+func _leave_battle() -> void:
+	_run_id += 1
+	for n: Node in [_ui_root, _over_panel]:
+		if n != null:
+			n.queue_free()
+	_ui_root = null
+	_over_panel = null
+	_body = null
+	board = null
+	battle = null
+	_busy = false
+	_info_open = false
+	_clear_selection()
+	_over_vp.clear()
 
 
 func _settings_changed() -> void:
-	board.settings = settings
+	if battle != null:
+		battle.reanimate_models = settings.reanimate_models
+		board.settings = settings
 	_apply_scale()
+
+
+func _set_ruler(on: bool) -> void:
+	board.set_ruler(on)
+	_show_ruler_state()
 	_refresh()
+
+
+func _show_ruler_state() -> void:
+	_toolbar.show_ruler(board.ruler_on, board.has_measurement())
 
 
 func _toggle_info() -> void:
@@ -451,13 +554,14 @@ func _apply_scale() -> void:
 		return    # still on the title or roster screen
 	_body.vertical = _portrait
 	_top_bar.visible = not _phone
+	_toolbar.arrange(not _portrait, not _phone)
 	_top_bar.set_density(_compact, logical_width < TINY_BELOW, _compact and not _portrait)
 	_phone_col.visible = _phone
-	_zoom_box.visible = not _phone
 	var wanted_parent: Control = _phone_box if _phone else _board_col
 	if _action_bar.get_parent() != wanted_parent:
 		_action_bar.reparent(wanted_parent)
 	_action_bar.set_phone(_phone)
+	_action_bar.set_narrow(logical_width < TINY_BELOW)
 	if _portrait:
 		# Portrait: the board on top, the tabbed panel docked below it.
 		_side.visible = true
@@ -513,6 +617,28 @@ func _clear_selection() -> void:
 	_target = null
 	_verdict = {}
 	_charge_targets.clear()
+
+
+## A row on the Units tab selects its unit, whichever side it is on, and does nothing else.
+func _on_unit_row_pressed(unit_id: String) -> void:
+	var u: UnitState = battle.unit_by_id(unit_id)
+	if u == null or _busy:
+		return
+	_select(u)
+	_refresh.call_deferred()
+
+
+## A weapon row on the Unit tab turns that weapon's range ring on or off.
+func _on_weapon_pressed(index: int) -> void:
+	if _selected == null:
+		return
+	var rings: Array = _weapon_rings.get(_selected.id, [])
+	if rings.has(index):
+		rings.erase(index)
+	else:
+		rings.append(index)
+	_weapon_rings[_selected.id] = rings
+	_refresh.call_deferred()
 
 
 func _on_enemy_tapped(e: UnitState) -> void:
@@ -665,13 +791,25 @@ func _on_confirm_pressed() -> void:
 	_refresh()
 
 
+## One step back: a pending move, then a target, then the selection.
 func _on_cancel_pressed() -> void:
+	var had_move: bool = _delta != Vector2.ZERO
 	_delta = Vector2.ZERO
 	_verdict = {}
-	if _target != null:
+	if had_move:
+		pass
+	elif _target != null:
 		_target = null
-	elif _selected != null and _delta == Vector2.ZERO:
+	elif _selected != null:
 		_selected = null
+	_refresh()
+
+
+func _on_undo_pressed() -> void:
+	var r: Dictionary = battle.cmd_undo_move()
+	_verdict = {} if r["ok"] else r
+	_delta = Vector2.ZERO
+	_consume_events()
 	_refresh()
 
 
@@ -795,6 +933,42 @@ func _on_skip_fight_pressed() -> void:
 	_refresh()
 
 
+## The end-phase button and key: asks first if the setting is on and units can still act.
+func _request_next() -> void:
+	if _busy or battle.is_over():
+		return
+	if battle.active_player() != HUMAN and not _human_can_act_in_ai_turn():
+		return
+	var left: int = _units_left_to_act()
+	if settings.confirm_end_phase and left > 0:
+		var body: String = UIText.t("confirm.end_phase.body_one") if left == 1 else UIText.t("confirm.end_phase.body", [left])
+		_ask("confirm.end_phase.title", body, "button.yes_end", _on_next_pressed)
+		return
+	_on_next_pressed()
+
+
+## How many of the human's units could still do something in this phase or step.
+func _units_left_to_act() -> int:
+	return battle.living(HUMAN).filter(_can_still_act).size()
+
+
+func _can_still_act(u: UnitState) -> bool:
+	match battle.phase():
+		"movement":
+			return not battle.has_moved(u)
+		"shooting":
+			if battle.has_shot(u):
+				return false
+			return battle.living(1 - HUMAN).any(func(e: UnitState) -> bool: return not battle.shoot_preview(u, e).is_empty())
+		"charge":
+			if battle.charge_finished(u):
+				return false
+			return not battle.charge_state(u).is_empty() or ChargeRules.eligible(u, battle.units)["ok"]
+		"fight":
+			return battle.can_pile_in(u) or battle.can_consolidate(u)
+	return false
+
+
 func _on_next_pressed() -> void:
 	if _busy or battle.is_over():
 		return
@@ -819,15 +993,19 @@ func _continue_after_human_action() -> void:
 
 
 func _restart() -> void:
-	_over_panel.visible = false
-	_scrim.visible = false
+	_over_panel.close()
+	_run_id += 1
+	_busy = false
+	_skip = false
+	_action_bar.set_busy(false)
 	_load_battle(_armies_in_play, Time.get_ticks_msec() % 100000)
 	board.battle = battle
 	_clear_selection()
-	_begun_key = ""
+	_set_ruler(false)
 	_begin_turn_once()
 	_consume_events()
 	_refresh()
+	board.grab_focus()
 
 
 # ---------------------------------------------------------------- AI turns and event playback
@@ -849,8 +1027,12 @@ func _ai_has_fight_pick() -> bool:
 ## Run AI steps until the human has something to do (their turn, or a choice in the AI's turn).
 func _run_until_human_input() -> void:
 	var guard: int = 0
+	var run: int = _run_id
 	while guard < 200 and not battle.is_over():
 		guard += 1
+		await _pause_point()
+		if run != _run_id:
+			return
 		if battle.active_player() == HUMAN and not _ai_has_fight_pick():
 			if battle.phase() == "command":
 				_begin_turn_once()
@@ -900,11 +1082,22 @@ func _run_until_human_input() -> void:
 
 ## Resolve the command phase once per player turn (the battle does not do it on its own).
 func _begin_turn_once() -> void:
-	var key: String = "%d_%d" % [battle.flow.round_no, battle.active_player()]
+	var key: String = _turn_key()
 	if key == _begun_key or battle.is_over():
 		return
 	_begun_key = key
 	battle.begin_turn()
+	if battle.active_player() == HUMAN:
+		_autosave()
+
+
+func _turn_key() -> String:
+	return "%d_%d" % [battle.flow.round_no, battle.active_player()]
+
+
+func _autosave() -> void:
+	if persist:
+		SaveFile.write({"battle": battle.to_save(), "armies": _armies_in_play}, save_path)
 
 
 func _has_human_piles() -> bool:
@@ -924,8 +1117,13 @@ func _has_human_consolidations() -> bool:
 func _set_busy(on: bool) -> void:
 	_busy = on
 	_skip = false
+	if _action_bar == null or battle == null:
+		return
 	_action_bar.set_busy(on)
 	_refresh()
+	if not on and _pause_pending:
+		_pause_pending = false
+		_open_pause()
 
 
 func _consume_events() -> void:
@@ -936,6 +1134,7 @@ func _consume_events() -> void:
 
 
 func _play_new_events() -> void:
+	_playing += 1
 	var batch: Array[Dictionary] = []
 	while _event_cursor < battle.events.size():
 		batch.append(battle.events[_event_cursor])
@@ -950,10 +1149,15 @@ func _play_new_events() -> void:
 		await _animate(e)
 	board.anim_positions.clear()
 	board.queue_redraw()
+	_playing -= 1
+	if _pause_pending and not _busy and _playing == 0:
+		_pause_pending = false
+		_open_pause()
 
 
 func _animate(e: Dictionary) -> void:
-	var instant: bool = _skip or settings.reduced_motion
+	var pace: float = settings.ai_speed() if _busy else 1.0    # the AI speed setting: 0 skips animation
+	var instant: bool = _skip or settings.reduced_motion or pace <= 0.0
 	match str(e["type"]):
 		"move", "charge_move", "pile_in", "consolidate":
 			var from: Array = e["from"]
@@ -969,18 +1173,18 @@ func _animate(e: Dictionary) -> void:
 					cur.append((from[i] as Vector2).lerp(to[i], t))
 				board.anim_positions[e["unit"]] = cur
 				board.queue_redraw()
-			tw.tween_method(step, 0.0, 1.0, 0.35)
+			tw.tween_method(step, 0.0, 1.0, 0.35 * pace)
 			await tw.finished
 		"shoot", "fight":
 			var a: UnitState = battle.unit_by_id(e["unit"])
 			var d: UnitState = battle.unit_by_id(e["target"])
 			if a != null and d != null:
-				board.flash(a.centre(), d.centre(), UITokens.SIDE_COLOURS[a.owner], 0.0 if instant else 0.7)
+				board.flash(a.centre(), d.centre(), UITokens.SIDE_COLOURS[a.owner], 0.0 if instant else 0.7 * pace)
 			if not instant:
-				await get_tree().create_timer(0.55).timeout
+				await get_tree().create_timer(0.55 * pace).timeout
 		"turn_start", "score", "charge_roll", "advance_roll":
 			if not instant:
-				await get_tree().create_timer(0.25).timeout
+				await get_tree().create_timer(0.25 * pace).timeout
 
 
 func _log_event(e: Dictionary) -> void:
@@ -996,6 +1200,8 @@ func _log_event(e: Dictionary) -> void:
 			line = ""
 		"move":
 			line = UIText.t("log.move." + str(e["mode"]), [side_word, who])
+		"undo_move":
+			line = UIText.t("log.undo_move", [side_word, who])
 		"hold":
 			line = UIText.t("log.hold", [side_word, who])
 		"advance_roll":
@@ -1054,24 +1260,27 @@ func _show_game_over() -> void:
 	if _game_over_shown:
 		return
 	_game_over_shown = true
+	if persist:
+		SaveFile.erase(save_path)
 	var mine: int = battle.vp[HUMAN]
 	var theirs: int = battle.vp[1 - HUMAN]
 	var key: String = "over.win" if mine > theirs else ("over.lose" if mine < theirs else "over.draw")
 	_over_title.text = UIText.t(key)
 	_over_vp[HUMAN].text = str(mine)
 	_over_vp[1 - HUMAN].text = str(theirs)
-	_over_panel.visible = true
-	_scrim.visible = true
-	_play_again.grab_focus()
+	_over_panel.open(_play_again)
 
 
 # ---------------------------------------------------------------- refresh
 
 func _refresh() -> void:
+	if battle == null or _top_bar == null or not is_instance_valid(_top_bar):
+		return
 	var total_rounds: int = int(battle.scenario.get("battle_rounds", 5))
 	var round_no: int = battle.flow.round_no
-	_top_bar.refresh(round_no, total_rounds, battle.active_player() == HUMAN, battle.phase(), battle.flow.command_points, battle.vp)
-	_phone_hud.refresh(round_no, total_rounds, battle.phase(), battle.vp)
+	var over: bool = battle.is_over()
+	_top_bar.refresh(round_no, total_rounds, battle.active_player() == HUMAN, battle.phase(), battle.flow.command_points, battle.vp, over)
+	_phone_hud.refresh(round_no, total_rounds, battle.phase(), battle.vp, over)
 	_refresh_action_bar()
 	_refresh_side_panel()
 	_refresh_board_only()
@@ -1080,7 +1289,12 @@ func _refresh() -> void:
 
 
 func _refresh_board_only() -> void:
+	if board == null:
+		return
 	board.selected = _selected
+	board.weapon_rings = _ring_radii(_selected)
+	var tools: Array[Rect2] = [_toolbar.get_rect()]
+	board.keep_clear = tools
 	board.ghost = _ghost_positions() if _delta.length() >= 0.01 else ([] as Array[Vector2])
 	board.ghost_ok = bool(_verdict.get("ok", true))
 	board.drag_enabled = _can_drag()
@@ -1096,20 +1310,30 @@ func _refresh_board_only() -> void:
 	board.queue_redraw()
 
 
-func _acted_units() -> Array:
-	var out: Array = []
-	for u in battle.living(HUMAN):
-		match battle.phase():
-			"movement":
-				if battle.has_moved(u):
-					out.append(u)
-			"shooting":
-				if battle.has_shot(u):
-					out.append(u)
-			"charge":
-				if battle.charge_finished(u):
-					out.append(u)
+## Ring sizes for a unit's switched-on weapons. Range runs edge to edge, so a ring around the
+## unit's centre sits one base radius further out than the weapon's range.
+func _ring_radii(u: UnitState) -> Array[float]:
+	var out: Array[float] = []
+	if u == null:
+		return out
+	for i in _weapon_rings.get(u.id, []):
+		out.append((u.weapons[i] as Weapon).range_in + u.base_radius)
 	return out
+
+
+func _acted_units() -> Array:
+	return battle.living(HUMAN).filter(_has_acted)
+
+
+func _has_acted(u: UnitState) -> bool:
+	match battle.phase():
+		"movement":
+			return battle.has_moved(u)
+		"shooting":
+			return battle.has_shot(u)
+		"charge":
+			return battle.charge_finished(u)
+	return false
 
 
 func _mark_highlights() -> void:
@@ -1162,7 +1386,7 @@ func _action_specs() -> Array[Dictionary]:
 	if _selected == null or _selected.owner != HUMAN:
 		if battle.phase() == "fight" and battle.fight_stage == "fight" and battle.fight_finished():
 			return [_hint("hint.fights_done")]
-		return [_hint("hint.select_unit")]
+		return _with_undo([_hint(_idle_hint_key())])
 	match battle.phase():
 		"movement":
 			return _movement_actions()
@@ -1173,6 +1397,25 @@ func _action_specs() -> Array[Dictionary]:
 		"fight":
 			return _fight_actions()
 	return []
+
+
+## What to do next with nothing selected, as one line for this phase.
+func _idle_hint_key() -> String:
+	if battle.active_player() != HUMAN and not _human_can_act_in_ai_turn():
+		return "hint.wait"
+	return "hint.select." + _rules_key()
+
+
+## The phase, or the step within the Fight phase. Rules and hint strings are named after it.
+func _rules_key() -> String:
+	return battle.phase() if battle.phase() != "fight" else "fight_" + battle.fight_stage
+
+
+## Add Undo move to these specs while there is a move to take back.
+func _with_undo(specs: Array[Dictionary]) -> Array[Dictionary]:
+	if battle.active_player() == HUMAN and battle.can_undo_move():
+		specs.append(_act("button.undo", _on_undo_pressed))
+	return specs
 
 
 func _hint(key: String) -> Dictionary:
@@ -1197,15 +1440,19 @@ func _mode(key: String, mode: String) -> Dictionary:
 
 func _movement_actions() -> Array[Dictionary]:
 	if battle.has_moved(_selected):
-		return [_hint("hint.already_moved")]
+		return _with_undo([_hint("hint.already_moved")])
+	var pending: bool = _delta.length() >= 0.01
 	var out: Array[Dictionary] = []
 	if UnitRules.engaged(_selected, battle.units):
 		out.append(_mode("mode.fall_back", "fall_back"))
 	else:
 		out.append(_mode("mode.normal", "normal"))
 		out.append(_mode("mode.advance", "advance"))
-	out.append(_act("button.hold", _on_hold_pressed))
-	out.append(_act("button.cancel", _on_cancel_pressed))
+	if pending:
+		out.append(_act("button.cancel", _on_cancel_pressed))
+	else:
+		out.append(_act("button.hold", _on_hold_pressed))
+		_with_undo(out)
 	out.append(_main("button.confirm_move", _on_confirm_pressed, _no_valid_move()))
 	return out
 
@@ -1258,16 +1505,47 @@ func _fight_actions() -> Array[Dictionary]:
 # ---------------------------------------------------------------- side panel data
 
 func _refresh_side_panel() -> void:
-	var phase: String = battle.phase()
-	var key: String = phase if phase != "fight" else "fight_" + battle.fight_stage
+	var over: bool = battle.is_over()
+	var key: String = _rules_key()
 	var odds: Dictionary = _odds_view()
-	var body: String = "" if not odds.is_empty() else UIText.t("help.body." + key)
-	if _busy:
-		body = UIText.t("help.ai_playing")
-	_side.show_orders(UIText.t("help.title." + key), body, _orders_detail())
+	var title: String = UIText.t("hud.battle_over") if over else UIText.t("help.title." + key)
+	_side.show_orders(title, "" if not odds.is_empty() else _instruction(key), _orders_detail(), not over)
 	_side.show_odds(odds)
 	_side.show_unit(_unit_view(_selected) if _selected != null else {})
+	_side.show_units(_units_view())
 	_side.show_log(_log_lines)
+
+
+## The one short line on the Orders tab: the action bar's hint if it has one.
+func _instruction(key: String) -> String:
+	if battle.is_over():
+		return UIText.t("help.over")
+	if _busy:
+		return UIText.t("help.ai_playing")
+	if board.ruler_on:
+		return UIText.t("ruler.hint")
+	for s in _action_specs():
+		if s.has("hint"):
+			return str(s["hint"])
+	return UIText.t("help.short." + key)
+
+
+## Rows for the Units tab: your units, then the enemy's.
+func _units_view() -> Array:
+	var rows: Array = []
+	for side: int in [HUMAN, 1 - HUMAN]:
+		for u: UnitState in battle.living(side):
+			var marks: Array = []
+			if u.battle_shocked:
+				marks.append([UIText.t("chip.shocked_short"), UITokens.illegal(settings.colour_blind)])
+			if _has_acted(u):
+				marks.append([UIText.t("chip.acted"), UITokens.INK_DIM])
+			var single: bool = u.starting_strength == 1 and u.wounds_per_model > 1
+			var count: String = UIText.t("units.wounds", [u.total_wounds_left(), u.wounds_per_model]) if single \
+					else UIText.t("units.models", [u.model_count(), u.starting_strength])
+			rows.append({"id": u.id, "side": u.owner, "name": u.unit_name, "count": count,
+				"selected": u == _selected, "marks": marks})
+	return rows
 
 
 func _orders_detail() -> String:
@@ -1358,8 +1636,10 @@ func _unit_view(u: UnitState) -> Dictionary:
 	if u.battle_shocked:
 		extras.append(UIText.t("chip.shocked"))
 	var weapons: Array = []
-	for w in u.weapons:
-		weapons.append([w.weapon_name, _weapon_line(w)])
+	var rings: Array = _weapon_rings.get(u.id, [])
+	for i in range(u.weapons.size()):
+		var w: Weapon = u.weapons[i]
+		weapons.append([w.weapon_name, _weapon_line(w), -1 if w.is_melee() else i, rings.has(i)])
 	return {"side": u.owner, "name": u.unit_name,
 		"note": UIText.t("card.models", [u.model_count(), u.starting_strength]),
 		"tiles": [[UIText.t("stat.move"), "%d\"" % int(u.move)], [UIText.t("stat.toughness"), str(u.toughness)],

@@ -56,7 +56,7 @@ wound roll. Any other tag is reported as "not applied".
 
 **Assumption, unverified:** the supplied rules never define "heal". Wounded models heal first, then
 destroyed models return with 1 wound, up to starting strength. Without this, Reanimation would do
-nothing for 1-wound models. Change `ArmyRules.reanimate` if the rule turns out to be wounds only.
+nothing for 1-wound models. The Gameplay setting "Reanimation returns destroyed models" switches this off, leaving wounds only.
 
 **Timing change:** you mark Spotted units during your Shooting phase, not all at its start.
 
